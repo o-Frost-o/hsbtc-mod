@@ -164,8 +164,6 @@
         const err = document.getElementById('github-auth-error');
         const oauthStatus = document.getElementById('github-oauth-status');
         const oauthBtn = document.getElementById('btn-github-oauth-login');
-        const oauthNotice = document.getElementById('oauth-config-notice');
-        const patDetails = document.getElementById('auth-pat-details');
 
         err.textContent = '';
         err.classList.add('hidden');
@@ -174,8 +172,6 @@
 
         const configured = HsbtrCloud.isOAuthConfigured();
         oauthBtn.disabled = !configured;
-        oauthNotice.classList.toggle('hidden', configured);
-        patDetails.open = !configured;
 
         document.getElementById('input-github-token').value = '';
         document.getElementById('modal-github-auth').classList.remove('hidden');

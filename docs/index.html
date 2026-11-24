@@ -802,48 +802,23 @@
 
     <!-- GitHub Authentication Modal -->
     <div id="modal-github-auth" class="modal-backdrop hidden">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-auth-compact">
             <div class="modal-header">
-                <h3>🔑 GitHub 官方帳號登入驗證</h3>
+                <h3>GitHub 登入</h3>
                 <button class="modal-close" data-close="modal-github-auth">×</button>
             </div>
             <div class="modal-body">
-                <div class="auth-oauth-card">
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6;">
-                        所有用戶皆可<strong>免登入直接瀏覽、搜尋與預覽翻譯</strong>；進行編輯、匯入或審核驗證時，點擊下方按鈕即可透過 <strong>GitHub 官方授權頁面</strong>安全登入，重新載入或重開頁面皆會自動保留登入狀態。
-                    </p>
-                    <button id="btn-github-oauth-login" class="btn btn-github-official btn-block" type="button">
-                        <svg class="github-mark-svg" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-                        使用 GitHub 官方帳號登入
-                    </button>
-                    <p id="github-oauth-status" style="color: var(--mc-red); font-size: 13px; margin-top: 8px;" class="hidden"></p>
-                    <div id="oauth-config-notice" class="auth-oauth-notice hidden">
-                        <strong>尚未綁定 OAuth App 與 Cloudflare Worker 交換端點</strong>：請網站管理員依倉庫內 <code>oauth-worker/README.md</code> 設定 <code>oauthClientId</code> 與 <code>oauthExchangeUrl</code> 後推送至 <code>main</code>；設定完成前仍可展開下方 PAT 登入。
-                    </div>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 10px;">
-                        ✓ 授權範圍：<code>public_repo</code>（儲存譯文與建立 IssueOps 審核提交）；唯一已驗證達 <strong>25 條</strong>即自動列入官網貢獻者名單。
-                    </p>
-                </div>
-
-                <details id="auth-pat-details" class="auth-pat-details">
-                    <summary>進階／備援：使用 Personal Access Token (PAT) 手動登入</summary>
-                    <div class="auth-help-box" style="margin-top: 10px;">
-                        <p style="margin-bottom: 6px;">若無法使用 OAuth 視窗，可前往 <a href="https://github.com/settings/tokens/new?description=HSBTR-Web-Editor&scopes=public_repo" target="_blank" rel="noopener noreferrer">GitHub Token 設定頁</a> 勾選 <code>public_repo</code> 產生 PAT：</p>
-                    </div>
-                    <form id="github-token-form">
-                        <div class="form-group">
-                            <label for="input-github-token">GitHub Personal Access Token：</label>
-                            <input type="password" id="input-github-token" class="form-control" placeholder="ghp_... 或 github_pat_..." autocomplete="off" required>
-                        </div>
-                        <p id="github-auth-error" style="color: var(--mc-red); font-size: 13px; margin-top: 6px;" class="hidden"></p>
-                        <div style="display:flex; justify-content:flex-end; margin-top: 10px;">
-                            <button id="btn-verify-github-token" class="btn btn-primary btn-sm" type="submit">使用 PAT 驗證登入</button>
-                        </div>
-                    </form>
-                </details>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" data-close="modal-github-auth" type="button">關閉</button>
+                <button id="btn-github-oauth-login" class="btn btn-github-official btn-block" type="button">
+                    <svg class="github-mark-svg" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+                    使用 GitHub 官方帳號登入
+                </button>
+                <p id="github-oauth-status" style="color: var(--mc-red); font-size: 13px; margin-top: 8px;" class="hidden"></p>
+                <div class="auth-divider"><span>或</span></div>
+                <form id="github-token-form" class="auth-token-row">
+                    <input type="password" id="input-github-token" class="form-control" placeholder="輸入 GitHub Token (ghp_... / github_pat_...)" aria-label="GitHub Token" autocomplete="off" required>
+                    <button id="btn-verify-github-token" class="btn btn-primary btn-sm" type="submit">登入</button>
+                </form>
+                <p id="github-auth-error" style="color: var(--mc-red); font-size: 13px; margin-top: 6px;" class="hidden"></p>
             </div>
         </div>
     </div>

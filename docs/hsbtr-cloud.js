@@ -16,10 +16,10 @@
         branch: 'main',
         dataPath: 'docs/data',
         siteUrl: 'https://o-frost-o.github.io/hsbtc-mod/',
-        repoUrl: 'https://github.com/o-Frost-o/hsbtc-mod',
+        repoUrl: 'https://github.com/o-frost-o/hsbtc-mod',
         // 填入 GitHub OAuth App Client ID 與 Cloudflare Worker (/exchange) 端點 URL（切勿填入 Client Secret）
-        oauthClientId: '',
-        oauthExchangeUrl: '',
+        oauthClientId: 'Ov23ligHSADzFgeOE0oG',
+        oauthExchangeUrl: 'https://hsbtc-github-oauth.bingshuang0w0.workers.dev/exchange',
         oauthScope: 'public_repo'
     };
 
@@ -279,7 +279,7 @@
             if (changed) {
                 emit('auth');
                 emit('oauth-success');
-                if (state.ready) syncDynamic().catch(() => {});
+                if (state.ready) syncDynamic().catch(() => { });
             }
         };
 
