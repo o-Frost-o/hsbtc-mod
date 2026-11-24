@@ -1,0 +1,113 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.5'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+base.archivesName = project.archives_base_name
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+    maven {
+        name = 'Shedaniel'
+        url = 'https://maven.shedaniel.me/'
+    }
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/'
+    }
+}
+
+dependencies {
+    // Minecraft 26.2 (unobfuscated vanilla official names)
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+    // Fabric Loader & Fabric API
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Config & UI dependencies
+    implementation("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+        exclude group: "net.fabricmc.fabric-api"
+    }
+    implementation("com.terraformersmc:modmenu:${project.modmenu_version}") {
+        exclude group: "net.fabricmc.fabric-api"
+    }
+
+    // JSON parsing utility
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // Testing
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Automatic Deployment to PrismLauncher Instance
+def defaultPrismModsDir = file('D:/PrismLauncher/instances/26.2/minecraft/mods').exists()
+    ? 'D:/PrismLauncher/instances/26.2/minecraft/mods'
+    : 'C:/Users/User/AppData/Roaming/PrismLauncher/instances/26.2/minecraft/mods'
+tasks.register('deployToPrism', Copy) {
+    dependsOn tasks.named('jar')
+    from tasks.named('jar').flatMap { it.archiveFile }
+    into findProperty('prism_mods_dir') ?: defaultPrismModsDir
+
+    doFirst {
+        def targetDir = file(findProperty('prism_mods_dir') ?: defaultPrismModsDir)
+        if (targetDir.exists()) {
+            targetDir.listFiles().each { f ->
+                if (f.name.startsWith("hypixel_skyblock_translation") && f.name.endsWith(".jar")) {
+                    println "Removing older deployed mod: ${f.name}"
+                    f.delete()
+                }
+            }
+        }
+    }
+
+    doLast {
+        println "Successfully deployed mod JAR to: ${destinationDir}"
+    }
+}
+
+// Data Collection Pipeline Task
+tasks.register('runDataPipeline', JavaExec) {
+    group = 'translation'
+    description = 'Executes multi-source data collection and schema normalization to build master dictionaries'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.hypixel.translation.pipeline.DataPipelineRunner'
+    args = [
+        '--output-dir', file('src/main/resources/assets/hsbtr/dictionaries').absolutePath,
+        '--neu-dir', file("${System.getProperty('user.home')}/AppData/Roaming/PrismLauncher/instances/26.2/minecraft/config/skyblocker/item-repo").absolutePath
+    ]
+}

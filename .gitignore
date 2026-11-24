@@ -1,0 +1,37 @@
+# Build & Gradle
+/.gradle/
+/build/
+/bin/
+/out/
+/cache/
+/run/
+/logs/
+*.log
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+
+# Local runtime & downloaded test artifacts
+/config/
+/test-libs/
+
+# AI Agent conversation, handoff, and proposal artifacts (excluded from GitHub repo)
+GPT_HANDOFF_GUIDE.md
+*HANDOFF*.md
+/proposals/
+.agent/
+.claude/
+.gemini/
+.codex/
+/agent_notes/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+{
+  "enableAltShiftPreview": true,
+  "showEnglishSubtitle": false,
+  "untranslatedCapture": true,
+  "categories": {
+    "TOOLTIPS": "DISPLAY",
+    "CONTAINER_UI": "DISPLAY",
+    "SCOREBOARD": "DISPLAY",
+    "TAB_LIST": "DISPLAY",
+    "CHAT": "DISPLAY",
+    "ACTION_BAR": "DISPLAY",
+    "BOSS_BAR": "DISPLAY",
+    "TITLE_SUBTITLE": "DISPLAY",
+    "ENTITY_TAGS": "DISPLAY"
+  }
+}

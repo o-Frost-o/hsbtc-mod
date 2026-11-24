@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "hypixel_skyblock_translation",
+  "version": "${version}",
+  "name": "Hypixel Skyblock Translation",
+  "description": "Hypixel Skyblock Traditional Chinese (zh_tw) translation mod.",
+  "authors": [
+    "o.frost.o"
+  ],
+  "contact": {
+    "homepage": "https://o-frost-o.github.io/hsbtc-mod/",
+    "sources": "https://github.com/o-Frost-o/hsbtc-mod"
+  },
+  "license": "MIT",
+  "icon": "assets/hsbtr/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.hypixel.translation.HypixelSkyblockTranslationMod"
+    ],
+    "modmenu": [
+      "com.hypixel.translation.config.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "hypixel_skyblock_translation.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "26.2",
+    "java": ">=25",
+    "fabric-api": "*",
+    "cloth-config": ">=26.2.155"
+  },
+  "suggests": {
+    "modmenu": ">=20.0.3",
+    "skyblocker": ">=6.11.0"
+  }
+}

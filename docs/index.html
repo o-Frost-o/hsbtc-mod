@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypixel SkyBlock 繁體中文編輯器 (HSBTR)</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='70' x='15' font-size='65' fill='%23ffaa00'>譯</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="workbench.css">
+    <link rel="stylesheet" href="review.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-left">
+            <div class="brand-logo">
+                <span class="logo-icon">§</span>
+                <div class="brand-text">
+                    <h1>Hypixel SkyBlock 繁體中文線上翻譯庫</h1>
+                    <span class="brand-sub">HSBTR Shared Cloud Editor • o.frost.o / hsbtc-mod</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div id="conn-badge" class="status-badge connected">
+                <span class="status-dot"></span>
+                <span id="conn-text">載入雲端資料庫…</span>
+            </div>
+            <button id="btn-sync-cloud" class="btn btn-secondary btn-sm" title="從 GitHub 重新同步最新共享翻譯資料">
+                <span class="btn-icon">🔄</span> 同步雲端
+            </button>
+            <button id="btn-github-auth" class="btn btn-primary btn-sm" title="登入 GitHub 帳號以進行編輯與審核驗證">
+                <span class="btn-icon">🔑</span> GitHub 驗證登入
+            </button>
+            <div id="github-user-chip" class="auth-user-chip hidden">
+                <img id="github-user-avatar" class="auth-user-avatar" src="" alt="GitHub avatar">
+                <span id="github-user-login">@user</span>
+                <span id="github-auth-mode" class="auth-mode-pill issueops">IssueOps</span>
+                <span id="github-user-progress" class="auth-progress-pill" title="唯一已驗證條目數 / 貢獻者門檻">0 / 25</span>
+                <button id="btn-github-logout" class="btn btn-secondary btn-xs" type="button">登出</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="app-nav">
+        <button class="nav-tab active" data-tab="review">翻譯審核</button>
+        <button class="nav-tab" data-tab="workbench">翻譯工作台</button>
+        <button class="nav-tab" data-tab="tokens">
+            <span class="tab-icon">🔤</span> 詞彙對照表
+            <span id="badge-token-count" class="tab-counter">0</span>
+        </button>
+        <button class="nav-tab" data-tab="items">
+            <span class="tab-icon">🗡️</span> 道具翻譯庫
+            <span id="badge-item-count" class="tab-counter">0</span>
+        </button>
+        <button class="nav-tab" data-tab="preview">
+            <span class="tab-icon">👁️</span> 即時翻譯預覽
+        </button>
+        <button class="nav-tab" data-tab="capture">
+            <span class="tab-icon">📥</span> 未翻譯擷取匯入
+            <span id="badge-capture-count" class="tab-counter">0</span>
+        </button>
+        <button class="nav-tab" data-tab="contributors">
+            <span class="tab-icon">🏆</span> 貢獻者名單
+            <span id="badge-contrib-count" class="tab-counter">0</span>
+        </button>
+        <button class="nav-tab" data-tab="csv">
+            <span class="tab-icon">⚙️</span> CSV 與雲端同步
+        </button>
+    </nav>
+
+    <!-- Main Content Panels -->
+    <main class="app-main">
+        <section id="tab-review" class="tab-panel active" aria-labelledby="review-heading">
+            <div class="wb-shell review-shell">
+                <header class="wb-heading review-heading">
+                    <h2 id="review-heading">翻譯審核</h2>
+                    <div class="review-progress">
+                        <p id="review-count">正在載入字典…</p>
+                        <progress id="review-progress" max="1" value="0" aria-label="目前範圍的審核進度"></progress>
+                    </div>
+                </header>
+                <div class="review-layout">
+                    <aside class="wb-card review-queue" aria-label="翻譯條目">
+                        <div class="review-filters">
+                            <label class="wb-sr-only" for="review-query">搜尋翻譯</label>
+                            <input id="review-query" type="search" placeholder="搜尋英文、譯文或 ID" autocomplete="off">
+                            <label class="wb-sr-only" for="review-kind">條目類型</label>
+                            <select id="review-kind">
+                                <option value="">所有類型</option>
+                                <option value="itemName">道具名稱</option>
+                                <option value="uiName">UI 名稱</option>
+                                <option value="uiLine">UI 文字／按鈕</option>
+                                <option value="uiRule">UI 規則</option>
+                                <option value="person">人物名稱</option>
+                                <option value="dialogue">NPC 對話</option>
+                                <option value="dialogueRule">NPC 對話規則</option>
+                                <option value="loreLine">道具／附魔說明</option>
+                                <option value="paragraph">道具／附魔段落</option>
+                                <option value="loreRule">道具／附魔規則</option>
+                                <option value="ruleTerm">規則詞彙</option>
+                                <option value="itemLore">道具參考說明</option>
+                                <option value="token">統一詞彙</option>
+                            </select>
+                            <div class="wb-segment review-status" role="group" aria-label="驗證狀態">
+                                <button type="button" data-review-status="pending" aria-pressed="true">待驗證</button>
+                                <button type="button" data-review-status="verified" aria-pressed="false">已驗證</button>
+                                <button type="button" data-review-status="all" aria-pressed="false">全部</button>
+                            </div>
+                        </div>
+                        <ul id="review-results" aria-label="搜尋結果"></ul>
+                        <div class="review-pages">
+                            <button type="button" id="review-page-prev" class="wb-button wb-secondary" aria-label="上一頁" disabled>‹</button>
+                            <span id="review-pages"></span>
+                            <button type="button" id="review-page-next" class="wb-button wb-secondary" aria-label="下一頁" disabled>›</button>
+                        </div>
+                    </aside>
+                    <div class="review-main">
+                        <p class="wb-card review-empty" id="review-empty">正在載入翻譯…</p>
+                        <section class="wb-card review-editor" id="review-editor" aria-label="編輯翻譯" hidden>
+                            <div class="review-entry-head">
+                                <div class="review-entry-meta">
+                                    <span id="review-entry-kind" class="review-kind"></span>
+                                    <span id="review-entry-state"></span>
+                                </div>
+                                <p id="review-entry-context" hidden></p>
+                            </div>
+                            <div class="review-excerpt-bar" id="review-excerpt-bar" hidden>
+                                <p>正在編輯所選段落。完整道具敘述的草稿會保留。</p>
+                                <button type="button" id="review-return-item" class="wb-button wb-secondary">返回完整敘述</button>
+                            </div>
+                            <div class="wb-panes review-panes">
+                                <div class="wb-pane wb-source-pane">
+                                    <div class="wb-pane-heading review-source-head">
+                                        <label for="review-source" id="review-source-label">英文原文</label>
+                                        <button type="button" class="wb-button wb-mark" id="review-mark" hidden>標記 token</button>
+                                    </div>
+                                    <textarea id="review-source" readonly spellcheck="false"></textarea>
+                                </div>
+                                <div class="wb-pane">
+                                    <div class="wb-pane-heading"><label for="review-value" id="review-value-label">繁中譯文</label></div>
+                                    <textarea id="review-value" placeholder="輸入繁體中文譯文…" spellcheck="false"></textarea>
+                                </div>
+                            </div>
+                            <div class="review-format">
+                                <div class="review-format-tools" id="review-format-tools" role="group" aria-label="插入 Minecraft 格式">
+                                    <details class="review-colors">
+                                        <summary class="wb-button wb-secondary"><span class="review-color-sample" aria-hidden="true"></span> 文字顏色</summary>
+                                        <div class="review-color-menu" id="review-colors"></div>
+                                    </details>
+                                    <button type="button" class="wb-button wb-secondary review-bold" data-code="l" aria-label="粗體" title="粗體 §l">B</button>
+                                    <button type="button" class="wb-button wb-secondary review-italic" data-code="o" aria-label="斜體" title="斜體 §o">I</button>
+                                    <button type="button" class="wb-button wb-secondary review-under" data-code="n" aria-label="底線" title="底線 §n">U</button>
+                                    <button type="button" class="wb-button wb-secondary review-strike" data-code="m" aria-label="刪除線" title="刪除線 §m">S</button>
+                                    <button type="button" class="wb-button wb-secondary" data-code="k" aria-label="亂碼" title="亂碼 §k">亂碼</button>
+                                    <button type="button" class="wb-button wb-secondary" data-code="r" title="重設格式 §r">清除格式</button>
+                                </div>
+                                <section class="review-roles" id="review-roles" aria-label="語意 token" hidden>
+                                    <p id="review-role-hint"></p>
+                                    <div class="wb-role-list" id="review-role-list"></div>
+                                    <form class="review-role-form" id="review-role-form" aria-labelledby="review-role-heading" hidden>
+                                        <div class="review-role-selection">
+                                            <h3 id="review-role-heading">已選原文</h3>
+                                            <p id="review-role-sample"></p>
+                                        </div>
+                                        <div class="review-role-fields">
+                                            <div class="wb-field">
+                                                <label for="review-role-id">Token ID</label>
+                                                <input id="review-role-id" required maxlength="24" pattern="[a-z][a-zA-Z0-9]{0,23}" placeholder="例如 damage" spellcheck="false">
+                                            </div>
+                                            <div class="wb-field">
+                                                <label for="review-role-type">保留方式</label>
+                                                <select id="review-role-type">
+                                                    <option value="number">動態數值</option>
+                                                    <option value="item">動態道具</option>
+                                                    <option value="npc">動態 NPC</option>
+                                                    <option value="fixed">固定詞組</option>
+                                                </select>
+                                            </div>
+                                            <div class="wb-field" id="review-role-local-field" hidden>
+                                                <label for="review-role-local">範例譯名（選填）</label>
+                                                <input id="review-role-local" maxlength="120" placeholder="例如 海洋生物">
+                                            </div>
+                                        </div>
+                                        <p id="review-role-error" role="alert" hidden></p>
+                                        <div class="review-role-actions">
+                                            <button type="button" id="review-role-cancel" class="wb-button wb-link">取消</button>
+                                            <button type="submit" class="wb-button wb-secondary">只標記</button>
+                                            <button type="submit" id="review-role-insert" class="wb-button wb-primary">標記並插入</button>
+                                        </div>
+                                    </form>
+                                </section>
+                                <p id="review-token-source" class="review-token-source" hidden></p>
+                                <details id="review-rule-regex" class="review-rule-regex" hidden>
+                                    <summary>比對規則</summary>
+                                    <code id="review-regex-text"></code>
+                                </details>
+                                <div class="review-variables" id="review-variables" hidden>
+                                    <span>變數</span>
+                                    <div id="review-variable-chips"></div>
+                                </div>
+                                <p id="review-token-warning" role="status" hidden></p>
+                                <p id="review-entry-hint" hidden></p>
+                            </div>
+                            <div class="review-actions">
+                                <p id="review-feedback" role="status"></p>
+                                <div class="review-action-buttons">
+                                    <button type="button" id="review-save" class="wb-button wb-secondary">儲存</button>
+                                    <button type="button" id="review-verify" class="wb-button wb-primary">Verified／已驗證</button>
+                                    <button type="button" id="review-next" class="wb-button wb-secondary">下一筆 <span aria-hidden="true">→</span></button>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="wb-card review-preview" id="review-preview-panel" aria-labelledby="review-preview-heading" hidden>
+                            <div class="review-preview-head">
+                                <h3 id="review-preview-heading">即時預覽</h3>
+                                <span>Minecraft 色碼與格式</span>
+                            </div>
+                            <div class="review-preview-pair">
+                                <div class="review-preview-column">
+                                    <h4>英文原文</h4>
+                                    <div class="review-preview-stage"><div id="review-preview-english" class="review-preview-text"></div></div>
+                                </div>
+                                <div class="review-preview-column">
+                                    <h4>繁中譯文</h4>
+                                    <div class="review-preview-stage"><div id="review-preview" class="review-preview-text"></div></div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section id="tab-workbench" class="tab-panel" aria-labelledby="wb-heading">
+            <div class="wb-shell">
+                <header class="wb-heading">
+                    <div>
+                        <h2 id="wb-heading">翻譯工作台</h2>
+                        <p>看完整句意，再安排對象、數值與繁中語序。</p>
+                    </div>
+                    <button type="button" class="wb-button wb-secondary" id="wb-example">載入範例</button>
+                </header>
+
+                <div class="wb-layout">
+                    <section class="wb-editor wb-card" aria-label="編輯譯文">
+                        <div class="wb-editor-toolbar">
+                            <div class="wb-field">
+                                <label for="wb-kind">文字用途</label>
+                                <select id="wb-kind">
+                                    <option value="paragraph">物品／介面說明</option>
+                                    <option value="menu">介面標籤</option>
+                                    <option value="title">介面標題</option>
+                                    <option value="dialogue">NPC／系統訊息</option>
+                                </select>
+                            </div>
+                            <p id="wb-context" class="wb-context">可直接貼上一段原文，或從擷取佇列帶入。</p>
+                            <button class="wb-button wb-link" type="button" id="wb-open-queue">開啟擷取佇列 <span aria-hidden="true">↗</span></button>
+                        </div>
+                        <div class="wb-panes">
+                            <div class="wb-pane wb-source-pane">
+                                <div class="wb-pane-heading"><label for="wb-source">原文</label><span>EN</span></div>
+                                <textarea id="wb-source" rows="8" maxlength="1200" lang="en" spellcheck="false"
+                                    placeholder="貼上完整英文原文，可保留原有換行。"></textarea>
+                                <div class="wb-pane-footer">
+                                    <button class="wb-button wb-mark" type="button" id="wb-mark">＋ 標記選取文字</button>
+                                    <span id="wb-count">0 / 300</span>
+                                </div>
+                            </div>
+                            <div class="wb-pane wb-target-pane">
+                                <div class="wb-pane-heading"><label for="wb-target">繁中譯文</label><span>ZH-TW</span></div>
+                                <textarea id="wb-target" rows="8" maxlength="1200" spellcheck="false"
+                                    placeholder="依繁中語序寫下完整譯文。"></textarea>
+                                <div class="wb-pane-footer">
+                                    <button class="wb-button wb-link" type="button" id="wb-use-existing" disabled>引用現有譯文</button>
+                                    <span id="wb-target-count">0 字元</span>
+                                </div>
+                            </div>
+                        </div>
+                        <section class="wb-roles" aria-labelledby="wb-role-heading">
+                            <div class="wb-section-heading">
+                                <div>
+                                    <h3 id="wb-role-heading">語意 token</h3>
+                                    <p id="wb-role-hint">選取原文中的數值或對象後標記。點擊 token 可插入譯文。</p>
+                                </div>
+                                <span id="wb-role-count" class="wb-tag">0 個</span>
+                            </div>
+                            <div id="wb-roles" class="wb-role-list"></div>
+                        </section>
+                        <div id="wb-checks" class="wb-checks" aria-live="polite"></div>
+                        <footer class="wb-actions">
+                            <p id="wb-feedback" role="status"></p>
+                            <div>
+                                <button class="wb-button wb-secondary" type="button" id="wb-verify">核對預覽</button>
+                                <button class="wb-button wb-primary" type="button" id="wb-save" disabled>儲存至雲端</button>
+                            </div>
+                        </footer>
+                    </section>
+
+                    <aside class="wb-side" aria-label="預覽與名詞表">
+                        <section class="wb-card wb-preview">
+                            <div class="wb-section-heading">
+                                <h3>顯示預覽</h3>
+                                <span id="wb-preview-label" class="wb-tag">草稿</span>
+                            </div>
+                            <div class="wb-preview-stage">
+                                <div id="wb-tooltip">
+                                    <span id="wb-preview-context"></span>
+                                    <p id="wb-preview-text"></p>
+                                </div>
+                            </div>
+                            <div class="wb-preview-footer">
+                                <span>提示框換行模擬</span>
+                                <div class="wb-segment" aria-label="預覽寬度">
+                                    <button type="button" id="wb-narrow" aria-pressed="true">窄</button>
+                                    <button type="button" id="wb-wide" aria-pressed="false">寬</button>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="wb-card wb-glossary">
+                            <div class="wb-section-heading">
+                                <h3>統一名詞表</h3>
+                                <span class="wb-tag">雲端字典</span>
+                            </div>
+                            <label class="wb-sr-only" for="wb-glossary-query">搜尋統一名詞表</label>
+                            <input type="search" id="wb-glossary-query" placeholder="搜尋原文、譯名或 Token ID">
+                            <ul id="wb-glossary-results"></ul>
+                        </section>
+                    </aside>
+                </div>
+            </div>
+            <dialog id="wb-role-dialog" aria-labelledby="wb-role-dialog-heading">
+                <form id="wb-role-form">
+                    <h3 id="wb-role-dialog-heading">標記語意 token</h3>
+                    <p id="wb-selection"></p>
+                    <div class="wb-field">
+                        <label for="wb-role-id">Token ID</label>
+                        <input id="wb-role-id" required maxlength="24" pattern="[a-z][a-zA-Z0-9]{0,23}" placeholder="例如 range" spellcheck="false">
+                    </div>
+                    <div class="wb-field">
+                        <label for="wb-role-type">保留方式</label>
+                        <select id="wb-role-type">
+                            <option value="number">數值可變（如 30%、6 或 1.5K）</option>
+                            <option value="fixed">固定名稱／文字</option>
+                        </select>
+                    </div>
+                    <div class="wb-field" id="wb-role-localized-field" hidden>
+                        <label for="wb-role-localized">固定譯名（留空保留原文）</label>
+                        <input id="wb-role-localized" maxlength="120" placeholder="例如 海洋生物">
+                    </div>
+                    <p id="wb-role-error" role="alert"></p>
+                    <div class="wb-dialog-actions">
+                        <button class="wb-button wb-secondary" type="button" id="wb-role-cancel">取消</button>
+                        <button class="wb-button wb-primary" type="submit">確認標記</button>
+                    </div>
+                </form>
+            </dialog>
+        </section>
+
+        <!-- Tab 1: Tokens -->
+        <section id="tab-tokens" class="tab-panel">
+            <div class="panel-toolbar">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="token-search" placeholder="搜尋 Token ID、英文原文或繁體中文..." autocomplete="off">
+                    <button id="token-search-clear" class="btn-clear hidden">×</button>
+                </div>
+                <div class="category-filters" id="token-category-filters">
+                    <button class="filter-pill active" data-category="ALL">全部類別</button>
+                    <button class="filter-pill" data-category="stat">數值 (stat)</button>
+                    <button class="filter-pill" data-category="reforge">重鑄 (reforge)</button>
+                    <button class="filter-pill" data-category="item">道具 (item)</button>
+                    <button class="filter-pill" data-category="ui">介面 (ui)</button>
+                    <button class="filter-pill" data-category="location">地點 (location)</button>
+                    <button class="filter-pill" data-category="npc">NPC</button>
+                    <button class="filter-pill" data-category="boss">首領 (boss)</button>
+                </div>
+                <button id="btn-add-token" class="btn btn-primary">
+                    <span class="btn-icon">+</span> 新增詞條
+                </button>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="tokens-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 24%">Token ID</th>
+                            <th style="width: 24%">英文原文 (en)</th>
+                            <th style="width: 24%">繁體中文 (zh_tw)</th>
+                            <th style="width: 10%">類別</th>
+                            <th style="width: 10%">色彩/圖示</th>
+                            <th style="width: 8%" class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tokens-tbody">
+                        <tr><td colspan="6" class="table-loading">正在載入詞彙資料...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <span id="tokens-pagination-info">共 0 個詞條</span>
+            </div>
+        </section>
+
+        <!-- Tab 2: Items -->
+        <section id="tab-items" class="tab-panel">
+            <div class="panel-toolbar">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="item-search" placeholder="搜尋道具 ID (如 HYPERION) 或道具名稱..." autocomplete="off">
+                    <button id="item-search-clear" class="btn-clear hidden">×</button>
+                </div>
+                <div class="select-filter">
+                    <label for="item-category-select">類別：</label>
+                    <select id="item-category-select">
+                        <option value="">全部類別 (ALL)</option>
+                        <option value="SWORD">劍 (SWORD)</option>
+                        <option value="BOW">弓 (BOW)</option>
+                        <option value="ARMOR">防具 (ARMOR)</option>
+                        <option value="ACCESSORY">飾品 (ACCESSORY)</option>
+                        <option value="DRILL">鑽頭 (DRILL)</option>
+                        <option value="PET">寵物 (PET)</option>
+                        <option value="COSMETIC">外觀 (COSMETIC)</option>
+                        <option value="MISC">其他 (MISC)</option>
+                    </select>
+                </div>
+                <div class="pagination-controls">
+                    <button id="item-prev-page" class="btn btn-secondary btn-sm" disabled>◀ 上一頁</button>
+                    <span id="item-page-indicator" class="page-indicator">第 1 頁</span>
+                    <button id="item-next-page" class="btn btn-secondary btn-sm">下一頁 ▶</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="items-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 22%">道具 ID</th>
+                            <th style="width: 22%">英文原名</th>
+                            <th style="width: 24%">繁體中文名稱</th>
+                            <th style="width: 12%">類別</th>
+                            <th style="width: 10%">稀有度</th>
+                            <th style="width: 10%" class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="items-tbody">
+                        <tr><td colspan="6" class="table-loading">正在載入道具列表...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <span id="items-pagination-info">共 0 項道具</span>
+            </div>
+        </section>
+
+        <!-- Tab 3: Live Preview -->
+        <section id="tab-preview" class="tab-panel">
+            <div class="preview-layout">
+                <div class="preview-input-card">
+                    <div class="card-header">
+                        <h2>道具與 Lore 原始輸入</h2>
+                        <div class="sample-buttons">
+                            <span class="sample-label">載入示範：</span>
+                            <button class="btn btn-xs btn-outline" data-sample="hyperion">亥伯龍</button>
+                            <button class="btn btn-xs btn-outline" data-sample="aote">終界之劍</button>
+                            <button class="btn btn-xs btn-outline" data-sample="divan">迪萬鑽頭</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="preview-item-name">道具英文名稱（包含詞綴與星數）：</label>
+                        <input type="text" id="preview-item-name" class="form-control" placeholder="例如：Fabled Hyperion ✪✪✪✪✪" value="Fabled Hyperion ✪✪✪✪✪">
+                    </div>
+                    <div class="form-group">
+                        <label for="preview-item-lore">Lore 描述文字（每行一行）：</label>
+                        <textarea id="preview-item-lore" class="form-control lore-editor" rows="12" placeholder="貼上道具 Lore 內容..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button id="btn-execute-preview" class="btn btn-primary btn-block">
+                            <span class="btn-icon">👁️</span> 執行即時翻譯與組合預覽
+                        </button>
+                    </div>
+                </div>
+
+                <div class="preview-output-card">
+                    <div class="card-header">
+                        <h2>遊戲內 Tooltip 預覽</h2>
+                        <span class="mc-badge">Minecraft 渲染層</span>
+                    </div>
+                    <div class="preview-container">
+                        <div class="mc-tooltip" id="mc-tooltip-preview">
+                            <div class="mc-line mc-title" id="mc-preview-title">§6傳說 亥伯龍 ✪✪✪✪✪</div>
+                            <div class="mc-lore-body" id="mc-preview-lore">
+                                <div class="mc-line">§7裝備評分：§d610</div>
+                                <div class="mc-line">§7傷害：§c+260</div>
+                                <div class="mc-line">§7力量：§c+150</div>
+                                <div class="mc-line">§7暴擊傷害：§9+50%</div>
+                                <div class="mc-line">&nbsp;</div>
+                                <div class="mc-line">§6技能：凋零衝擊  §e§l右鍵點擊</div>
+                                <div class="mc-line">§7向前瞬移 10 格並造成範圍爆炸。</div>
+                                <div class="mc-line">§8魔力消耗：§3150</div>
+                                <div class="mc-line">&nbsp;</div>
+                                <div class="mc-line">§d§l神話 劍</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="decomposition-info" id="decomposition-info">
+                        <h3>解析拆解資訊</h3>
+                        <div class="decomp-tags">
+                            <span class="decomp-chip" id="chip-reforge">詞綴: 傳說 (Fabled)</span>
+                            <span class="decomp-chip" id="chip-base">本體: 亥伯龍 (Hyperion)</span>
+                            <span class="decomp-chip" id="chip-stars">星數: ✪✪✪✪✪</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 4: Untranslated Capture Import -->
+        <section id="tab-capture" class="tab-panel">
+            <div class="capture-import-banner" id="capture-drop-zone">
+                <div>
+                    <strong>📂 匯入遊戲內未翻譯擷取紀錄 (untranslated_capture.json)</strong>
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-top: 2px;">可將遊戲設定資料夾內的 <code>untranslated_capture.json</code> 拖曳至此或點擊選擇檔案匯入（暫存於瀏覽器本機，重新載入不遺失）。</p>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="file" id="capture-file-input" accept=".json,application/json" class="file-input-hidden">
+                    <button id="btn-import-capture" class="btn btn-primary btn-sm" type="button">選擇 JSON 檔案</button>
+                    <button id="btn-clear-capture" class="btn btn-secondary btn-sm" type="button">清空佇列</button>
+                </div>
+            </div>
+
+            <div class="panel-toolbar">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="capture-search" placeholder="過濾未翻譯擷取文本..." autocomplete="off">
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="capture-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 14%">雜湊 (SHA-256)</th>
+                            <th style="width: 38%">未收錄純文字 (Clean Text)</th>
+                            <th style="width: 26%">原始格式 (Raw Text)</th>
+                            <th style="width: 10%">出現次數</th>
+                            <th style="width: 12%" class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="capture-tbody">
+                        <tr><td colspan="5" class="table-loading">請匯入遊戲產生的 untranslated_capture.json 以檢視與建立翻譯</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <span id="capture-count-info">共擷取 0 條未收錄文本</span>
+            </div>
+        </section>
+
+        <!-- Tab: Contributors Leaderboard -->
+        <section id="tab-contributors" class="tab-panel">
+            <div class="contrib-shell">
+                <div class="contrib-hero-card">
+                    <div class="contrib-hero-head">
+                        <div>
+                            <h2>🏆 社群翻譯貢獻者名單</h2>
+                            <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+                                透過 GitHub 帳號驗證並完成至少 <strong id="contrib-threshold-val" style="color: var(--mc-gold);">25</strong> 條唯一翻譯審核驗證的編輯者，將永久收錄於下方官方貢獻者名單。
+                            </p>
+                        </div>
+                        <button id="btn-contrib-refresh" class="btn btn-secondary btn-sm" type="button">🔄 更新貢獻統計</button>
+                    </div>
+                    <div class="contrib-hero-stats">
+                        <div class="contrib-metric">
+                            <span class="contrib-metric-num" id="contrib-total-verified">0</span>
+                            <span class="contrib-metric-lbl">雲端已驗證總條目數</span>
+                        </div>
+                        <div class="contrib-metric">
+                            <span class="contrib-metric-num" id="contrib-official-count">0</span>
+                            <span class="contrib-metric-lbl">官方認證貢獻者 (≥25 條)</span>
+                        </div>
+                        <div class="contrib-metric">
+                            <span class="contrib-metric-num" id="contrib-pending-count">0</span>
+                            <span class="contrib-metric-lbl">GitHub Actions 待寫入提交</span>
+                        </div>
+                    </div>
+                    <div id="contrib-personal-box" class="contrib-progress-wrap"></div>
+                </div>
+
+                <div class="contrib-card">
+                    <h3>官方貢獻者 (已達成 ≥ 25 條唯一驗證)</h3>
+                    <div id="contrib-roster-grid" class="contrib-grid"></div>
+                </div>
+
+                <div class="contrib-card" id="contrib-pending-wrap">
+                    <h3>⏳ 待寫入雲端資料庫的提交佇列 (IssueOps)</h3>
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">非倉庫推送權限帳號送出的編輯與驗證會建立結構化 GitHub Issue，並由 GitHub Actions 在數秒內原子寫入共享資料庫。</p>
+                    <ul id="contrib-pending-list" class="pending-list"></ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 5: CSV & Cloud Sync -->
+        <section id="tab-csv" class="tab-panel">
+            <div class="csv-cards-grid">
+                <!-- Export Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📥 匯出詞彙對照表 (CSV)</h2>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-desc">將目前雲端合併後的所有 Token 詞彙匯出為標準 RFC 4180 CSV 檔案，可使用 Excel、Google 試算表或文字編輯器檢視與編輯。</p>
+                        <ul class="feature-list">
+                            <li>完整保留 UTF-8 繁體中文編碼與特殊符號</li>
+                            <li>雙引號轉義遵循標準 RFC 4180 規範</li>
+                            <li>包含 Token ID、英文原文、繁體中文、類別</li>
+                        </ul>
+                    </div>
+                    <div class="card-footer">
+                        <button id="btn-export-csv" class="btn btn-primary" type="button">
+                            <span class="btn-icon">💾</span> 下載 tokens.csv
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Import Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📤 匯入詞彙對照表 (CSV)</h2>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-desc">上傳編輯完成的 RFC 4180 CSV 檔案，完成 GitHub 帳號驗證後即可批次寫入共用雲端資料庫。</p>
+                        <div class="drop-zone" id="csv-drop-zone">
+                            <span class="drop-icon">📄</span>
+                            <span class="drop-prompt">拖曳 CSV 檔案至此，或點擊選擇檔案</span>
+                            <input type="file" id="csv-file-input" accept=".csv,text/csv" class="file-input-hidden">
+                        </div>
+                        <div id="import-preview-box" class="import-preview hidden">
+                            <span id="import-file-name" class="import-file-name">檔案名稱</span>
+                            <span id="import-row-count" class="import-row-count">準備匯入...</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button id="btn-confirm-import" class="btn btn-success" disabled>
+                            <span class="btn-icon">✔</span> 確認匯入並儲存至雲端
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Standalone Cloud DB Card -->
+                <div class="card hot-reload-card">
+                    <div class="card-header">
+                        <h2>☁️ 雲端獨立資料庫與同步</h2>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-desc">此網頁直接存取 <code>o-Frost-o/hsbtc-mod</code> 雲端共享資料庫（<code>docs/data/</code>），無需執行遊戲內熱重載，重新載入或重開頁面均會自動保存與同步。</p>
+                        <div class="reload-stats">
+                            <div class="stat-pill">
+                                <span class="stat-num" id="stat-verified-count">0</span>
+                                <span class="stat-lbl">已驗證條目</span>
+                            </div>
+                            <div class="stat-pill">
+                                <span class="stat-num" id="stat-override-count">0</span>
+                                <span class="stat-lbl">雲端差異修正</span>
+                            </div>
+                        </div>
+                        <p style="font-size:12px; color: var(--text-secondary); margin-top: 12px;">開發者或 Agent 手動將雲端資料庫回寫至模組資源檔：</p>
+                        <code class="sync-cmd-box">node scripts/sync_cloud_db.mjs</code>
+                    </div>
+                    <div class="card-footer" style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button id="btn-sync-cloud-card" class="btn btn-primary" type="button">🔄 立即同步雲端</button>
+                        <button id="btn-download-overrides" class="btn btn-secondary btn-sm" type="button">⬇ overrides.json</button>
+                        <button id="btn-download-review-status" class="btn btn-secondary btn-sm" type="button">⬇ review_status.json</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Pinned Status Bar -->
+    <footer class="app-statusbar">
+        <div class="statusbar-left">
+            <span class="status-indicator-dot"></span>
+            <span id="sb-conn-status">雲端資料庫: 正在初始化...</span>
+        </div>
+        <div class="statusbar-center">
+            <span class="sb-metric">詞彙數: <strong id="sb-tokens">0</strong></span>
+            <span class="sb-divider">|</span>
+            <span class="sb-metric">道具數: <strong id="sb-items">0</strong></span>
+            <span class="sb-divider">|</span>
+            <span class="sb-metric">已驗證審核: <strong id="sb-verified">0</strong></span>
+            <span class="sb-divider">|</span>
+            <span class="sb-metric">擷取暫存: <strong id="sb-untranslated">0</strong></span>
+        </div>
+        <div class="statusbar-right">
+            <span id="sb-auth-status">GitHub: 唯讀瀏覽中</span>
+        </div>
+    </footer>
+
+    <!-- Token Edit/Add Modal -->
+    <div id="modal-token" class="modal-backdrop hidden">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="modal-token-title">編輯詞條</h3>
+                <button class="modal-close" data-close="modal-token">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="token-form">
+                    <div class="form-group">
+                        <label for="form-token-id">Token ID (全大寫底線，例如 STAT_DAMAGE)：</label>
+                        <input type="text" id="form-token-id" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="form-token-en">英文原文 (en)：</label>
+                        <input type="text" id="form-token-en" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="form-token-zh">繁體中文翻譯 (zh_tw)：</label>
+                        <input type="text" id="form-token-zh" class="form-control" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="form-token-cat">類別 (Category)：</label>
+                            <input type="text" id="form-token-cat" class="form-control" list="cat-suggestions" placeholder="stat, reforge, ui...">
+                            <datalist id="cat-suggestions">
+                                <option value="stat">
+                                <option value="reforge">
+                                <option value="item">
+                                <option value="ui">
+                                <option value="location">
+                                <option value="npc">
+                                <option value="boss">
+                                <option value="general">
+                            </datalist>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="form-token-color">色彩代碼 (如 §c)：</label>
+                            <input type="text" id="form-token-color" class="form-control" placeholder="§c 或 §a">
+                        </div>
+                    </div>
+                    <div class="token-preview-box">
+                        <span class="preview-label">引用預覽：</span>
+                        <code id="form-token-tag-preview">{TOKEN_ID}</code>
+                        <span class="arrow">➔</span>
+                        <span id="form-token-rendered-preview" class="rendered-val">繁體中文</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="modal-token">取消</button>
+                <button id="btn-save-token" class="btn btn-primary">儲存詞條</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Edit Modal -->
+    <div id="modal-item" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h3 id="modal-item-title">編輯道具翻譯</h3>
+                <button class="modal-close" data-close="modal-item">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="item-form">
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="form-item-id">道具 ID：</label>
+                            <input type="text" id="form-item-id" class="form-control" readonly>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="form-item-en">英文原名：</label>
+                            <input type="text" id="form-item-en" class="form-control" readonly>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="form-item-zh">繁體中文名稱 (name_zh_tw)：</label>
+                            <input type="text" id="form-item-zh" class="form-control" required>
+                        </div>
+                        <div class="form-group col-3">
+                            <label for="form-item-cat">類別：</label>
+                            <input type="text" id="form-item-cat" class="form-control" readonly>
+                        </div>
+                        <div class="form-group col-3">
+                            <label for="form-item-rarity">稀有度：</label>
+                            <input type="text" id="form-item-rarity" class="form-control" readonly>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="form-item-lore">Lore 模板（每行一條）：</label>
+                        <textarea id="form-item-lore" class="form-control lore-editor" rows="8"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="modal-item">取消</button>
+                <button id="btn-save-item" class="btn btn-primary">儲存道具</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GitHub Authentication Modal -->
+    <div id="modal-github-auth" class="modal-backdrop hidden">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>🔑 GitHub 編輯與驗證登入</h3>
+                <button class="modal-close" data-close="modal-github-auth">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="auth-help-box">
+                    <p>為了確保雲端共享翻譯品質與貢獻者歸屬，編輯、驗證或匯入翻譯前需先驗證 GitHub 帳號：</p>
+                    <ul style="margin: 8px 0 0 18px;">
+                        <li><strong>所有用戶可免登入直接瀏覽、搜尋與預覽翻譯</strong>。</li>
+                        <li>前往 <a href="https://github.com/settings/tokens/new?description=HSBTR-Web-Editor&scopes=public_repo" target="_blank" rel="noopener noreferrer">GitHub Personal Access Token (classic)</a> 勾選 <code>public_repo</code>（或 Fine-grained Token 授予 Issues / Contents 讀寫權限）產生 Token。</li>
+                        <li>Token 僅儲存在您的瀏覽器本機並直接向 GitHub API 驗證身份。</li>
+                        <li>唯一已驗證審核滿 <strong>25 條</strong> 後，系統將自動將您的 GitHub 帳號收錄於官方貢獻者名單。</li>
+                    </ul>
+                </div>
+                <form id="github-token-form">
+                    <div class="form-group">
+                        <label for="input-github-token">GitHub Personal Access Token：</label>
+                        <input type="password" id="input-github-token" class="form-control" placeholder="ghp_... 或 github_pat_..." autocomplete="off" required>
+                    </div>
+                    <p id="github-auth-error" style="color: var(--mc-red); font-size: 13px; margin-top: 6px;" class="hidden"></p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-close="modal-github-auth" type="button">取消</button>
+                <button id="btn-verify-github-token" class="btn btn-primary" type="button">驗證並登入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="hsbtr-engine.js"></script>
+    <script src="hsbtr-cloud.js"></script>
+    <script src="app.js"></script>
+    <script src="workbench.js"></script>
+    <script src="review.js"></script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+name: Apply Translation Submission
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: hsbtr-cloud-db
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: startsWith(github.event.issue.title, '[HSBTR-SUBMISSION]')
+    runs-on: ubuntu-latest
+    outputs:
+      committed: ${{ steps.process.outputs.committed }}
+      status: ${{ steps.process.outputs.status }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate & apply translation submission
+        id: process
+        run: node .github/scripts/apply_submission.mjs
+
+      - name: Commit & push cloud DB updates
+        if: steps.process.outputs.committed == 'true'
+        env:
+          COMMIT_SUMMARY: ${{ steps.process.outputs.summary }}
+          COMMIT_ACTOR: ${{ steps.process.outputs.actor }}
+        run: |
+          git config user.name "o.frost.o"
+          git config user.email "o-Frost-o@users.noreply.github.com"
+          git add docs/data/overrides.json docs/data/review_status.json docs/data/contributors.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "docs(data): ${COMMIT_SUMMARY} (@${COMMIT_ACTOR})"
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git pull --rebase origin main
+          done
+          exit 1
+
+      - name: Comment & close issue
+        uses: actions/github-script@v7
+        env:
+          PROCESS_STATUS: ${{ steps.process.outputs.status }}
+          PROCESS_MESSAGE: ${{ steps.process.outputs.message }}
+        with:
+          script: |
+            const issue_number = context.issue.number;
+            const status = process.env.PROCESS_STATUS || '';
+            const body = process.env.PROCESS_MESSAGE || '提交處理完成。';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body
+            });
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                labels: [status === 'applied' ? 'hsbtr-applied' : 'hsbtr-rejected']
+              });
+            } catch (_) {}
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              state: 'closed',
+              state_reason: status === 'applied' ? 'completed' : 'not_planned'
+            });
+
+  deploy:
+    needs: apply
+    if: needs.apply.outputs.committed == 'true'
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout updated docs
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
