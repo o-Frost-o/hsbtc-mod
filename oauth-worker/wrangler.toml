@@ -1,0 +1,7 @@
+name = "hsbtc-github-oauth"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://o-frost-o.github.io"
+ALLOWED_REDIRECT_PREFIX = "https://o-frost-o.github.io/hsbtc-mod"

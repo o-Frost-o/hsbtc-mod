@@ -146,11 +146,13 @@
             document.getElementById('github-user-avatar').src = snap.auth.user.avatar_url || '';
             document.getElementById('github-user-login').textContent = '@' + login;
             const modeEl = document.getElementById('github-auth-mode');
-            modeEl.textContent = snap.auth.pushAccess ? '直寫授權' : 'IssueOps';
+            const modeLabel = snap.auth.pushAccess ? '直寫授權' : 'IssueOps';
+            modeEl.textContent = modeLabel;
             modeEl.className = 'auth-mode-pill' + (snap.auth.pushAccess ? '' : ' issueops');
             document.getElementById('github-user-progress').textContent = myCount >= threshold
                 ? `✔ ${myCount} (貢獻者)` : `${myCount} / ${threshold}`;
-            sbAuth.textContent = `GitHub: @${login} (${snap.auth.pushAccess ? 'Push 直寫' : 'IssueOps'})`;
+            const methodTag = snap.auth.method === 'oauth' ? 'OAuth' : 'PAT';
+            sbAuth.textContent = `GitHub: @${login} (${methodTag} · ${snap.auth.pushAccess ? 'Push 直寫' : 'IssueOps'})`;
         } else {
             authBtn.classList.remove('hidden');
             userChip.classList.add('hidden');
@@ -160,12 +162,29 @@
 
     const openAuthModal = () => {
         const err = document.getElementById('github-auth-error');
+        const oauthStatus = document.getElementById('github-oauth-status');
+        const oauthBtn = document.getElementById('btn-github-oauth-login');
+        const oauthNotice = document.getElementById('oauth-config-notice');
+        const patDetails = document.getElementById('auth-pat-details');
+
         err.textContent = '';
         err.classList.add('hidden');
+        oauthStatus.textContent = '';
+        oauthStatus.classList.add('hidden');
+
+        const configured = HsbtrCloud.isOAuthConfigured();
+        oauthBtn.disabled = !configured;
+        oauthNotice.classList.toggle('hidden', configured);
+        patDetails.open = !configured;
+
         document.getElementById('input-github-token').value = '';
         document.getElementById('modal-github-auth').classList.remove('hidden');
         State.activeModal = 'modal-github-auth';
-        setTimeout(() => document.getElementById('input-github-token').focus(), 40);
+        if (configured) {
+            setTimeout(() => oauthBtn.focus(), 40);
+        } else {
+            setTimeout(() => document.getElementById('input-github-token').focus(), 40);
+        }
     };
 
     const closeModal = (modalId) => {
@@ -522,7 +541,28 @@
 
     document.addEventListener('hsbtr:cloud-ready', handleCloudStateChange);
     document.addEventListener('hsbtr:cloud-update', handleCloudStateChange);
-    document.addEventListener('hsbtr:cloud-auth', refreshHeaderAndStatus);
+    document.addEventListener('hsbtr:cloud-auth', () => {
+        refreshHeaderAndStatus();
+        if (document.getElementById('tab-contributors').classList.contains('active')) renderContributors();
+    });
+    document.addEventListener('hsbtr:cloud-oauth-success', () => {
+        const snap = HsbtrCloud.getSnapshot();
+        closeModal('modal-github-auth');
+        if (snap.auth.loggedIn && snap.auth.user) {
+            showToast(`已透過 GitHub 官方帳號登入 @${snap.auth.user.login} (${snap.auth.pushAccess ? '直寫模式' : 'IssueOps 模式'})`, 'success');
+        }
+    });
+    document.addEventListener('hsbtr:cloud-oauth-error', () => {
+        const res = HsbtrCloud.consumeOAuthResult();
+        if (res && !res.ok && res.error) {
+            const oauthStatus = document.getElementById('github-oauth-status');
+            if (oauthStatus) {
+                oauthStatus.textContent = res.error;
+                oauthStatus.classList.remove('hidden');
+            }
+            showToast(res.error, 'error');
+        }
+    });
     document.addEventListener('hsbtr:cloud-merged', () => showToast('GitHub Actions 已完成雲端合併，已載入最新共享資料！', 'success'));
     document.addEventListener('hsbtr:require-auth', () => {
         showToast('請先驗證 GitHub 帳號再進行編輯或驗證操作', 'warning');
@@ -548,11 +588,28 @@
             });
         });
 
-        // Auth UI
+        // Auth UI (Official OAuth + PAT Fallback)
         document.getElementById('btn-github-auth').addEventListener('click', openAuthModal);
         document.getElementById('btn-github-logout').addEventListener('click', () => {
             HsbtrCloud.logout();
             showToast('已登出 GitHub 驗證帳號', 'info');
+        });
+        document.getElementById('btn-github-oauth-login').addEventListener('click', async () => {
+            const oauthBtn = document.getElementById('btn-github-oauth-login');
+            const oauthStatus = document.getElementById('github-oauth-status');
+            oauthStatus.classList.add('hidden');
+            oauthBtn.disabled = true;
+            try {
+                const res = await HsbtrCloud.startOAuthLogin();
+                if (res.mode === 'popup') {
+                    showToast('已開啟 GitHub 官方授權視窗，請完成授權…', 'info');
+                }
+            } catch (err) {
+                oauthStatus.textContent = err.message;
+                oauthStatus.classList.remove('hidden');
+            } finally {
+                oauthBtn.disabled = !HsbtrCloud.isOAuthConfigured();
+            }
         });
         const verifyAuthAction = async (e) => {
             if (e) e.preventDefault();
@@ -562,7 +619,7 @@
             btn.disabled = true;
             errEl.classList.add('hidden');
             try {
-                const auth = await HsbtrCloud.verifyToken(token);
+                const auth = await HsbtrCloud.verifyToken(token, { authMethod: 'pat' });
                 closeModal('modal-github-auth');
                 showToast(`已登入 GitHub 帳號 @${auth.user.login} (${auth.pushAccess ? '直寫模式' : 'IssueOps 模式'})`, 'success');
                 renderContributors();
@@ -574,7 +631,6 @@
             }
         };
         document.getElementById('github-token-form').addEventListener('submit', verifyAuthAction);
-        document.getElementById('btn-verify-github-token').addEventListener('click', verifyAuthAction);
 
         // Cloud Sync Buttons
         const syncAction = async () => {
@@ -776,6 +832,14 @@
 
         try {
             await HsbtrCloud.init();
+            const oauthRes = HsbtrCloud.consumeOAuthResult();
+            if (oauthRes) {
+                if (oauthRes.ok && oauthRes.auth?.user?.login) {
+                    showToast(`已透過 GitHub 官方帳號登入 @${oauthRes.auth.user.login}`, 'success');
+                } else if (!oauthRes.ok && oauthRes.error) {
+                    showToast(oauthRes.error, 'error');
+                }
+            }
             executePreview();
         } catch (err) {
             document.dispatchEvent(new Event('hsbtr:workbench-tokens-error'));

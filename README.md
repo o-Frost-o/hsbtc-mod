@@ -15,7 +15,7 @@
 - **按住 `Alt` / `Shift` 瞬時檢視英文原文**：除道具 Tooltip 外，聊天室中的 NPC / Boss 對話與互動選項亦支援按住 `Alt` 鍵即時切回英文原文預覽。
 - **獨立雲端翻譯網頁（GitHub Pages + IssueOps）**：
   - 全網頁前端與雲端共享資料庫位於 `docs/`，已從 Mod 本體完全抽離（無需本機伺服器或熱重載）。
-  - 所有編輯與驗證需先完成 GitHub 帳號驗證（支援倉庫協作者直寫與一般貢獻者透過 GitHub Actions IssueOps 自動合併寫入）。
+  - 所有編輯與驗證需先完成 GitHub 帳號驗證（支援透過 GitHub 官方 OAuth 授權登入 + [oauth-worker/](oauth-worker/README.md) Cloudflare Worker 代理或 PAT 備援，並支援倉庫協作者直寫與一般貢獻者透過 GitHub Actions IssueOps 自動合併寫入）。
   - 累積至少 **25 條**唯一翻譯審核驗證的編輯者將自動列入網頁的 **🏆 貢獻者名單**。
 
 ## 開發者／Agent 資料庫回寫

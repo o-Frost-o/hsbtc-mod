@@ -16,10 +16,15 @@
         branch: 'main',
         dataPath: 'docs/data',
         siteUrl: 'https://o-frost-o.github.io/hsbtc-mod/',
-        repoUrl: 'https://github.com/o-Frost-o/hsbtc-mod'
+        repoUrl: 'https://github.com/o-Frost-o/hsbtc-mod',
+        // 填入 GitHub OAuth App Client ID 與 Cloudflare Worker (/exchange) 端點 URL（切勿填入 Client Secret）
+        oauthClientId: '',
+        oauthExchangeUrl: '',
+        oauthScope: 'public_repo'
     };
 
     const STORAGE_AUTH = 'hsbtr.github_auth.v1';
+    const STORAGE_OAUTH_TX = 'hsbtr.oauth_tx.v1';
     const STORAGE_PENDING = 'hsbtr.pending_submissions.v1';
     const STORAGE_CAPTURE = 'hsbtr.capture_queue.v1';
     const BASE_FILES = ['tokens', 'items', 'item_lore_en', 'lore_lines', 'menus', 'dialogues'];
@@ -31,12 +36,19 @@
         return new TextDecoder('utf-8').decode(bytes);
     };
 
+    const base64UrlEncode = (bytes) => {
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+
     const listeners = new Set();
     const state = {
         ready: false,
         sourceMode: 'loading', // 'github-api' | 'github-raw' | 'local'
         lastSyncedAt: null,
-        auth: { token: '', user: null, pushAccess: false },
+        lastOAuthResult: null,
+        auth: { token: '', user: null, pushAccess: false, method: 'pat' },
         base: {},
         cloudOverrides: HsbtrEngine.createEmptyOverrides(),
         cloudReviewStatus: {},
@@ -229,14 +241,217 @@
         }, 6000);
     }
 
+    function isOAuthConfigured() {
+        return Boolean(String(CONFIG.oauthClientId || '').trim() && String(CONFIG.oauthExchangeUrl || '').trim());
+    }
+
+    async function createPkceChallenge(verifier) {
+        if (!globalThis.crypto?.subtle) {
+            throw new Error('目前瀏覽器不支援 WebCrypto PKCE，請使用 HTTPS 網站或下方 PAT 登入。');
+        }
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+        return base64UrlEncode(new Uint8Array(digest));
+    }
+
+    function randomUrlToken(byteLen = 32) {
+        if (!globalThis.crypto?.getRandomValues) {
+            throw new Error('目前瀏覽器不支援安全亂數產生器，請改用現代瀏覽器或 PAT 登入。');
+        }
+        const buf = new Uint8Array(byteLen);
+        crypto.getRandomValues(buf);
+        return base64UrlEncode(buf);
+    }
+
+    function installPopupBridge() {
+        if (typeof window === 'undefined' || installPopupBridge._done) return;
+        installPopupBridge._done = true;
+
+        const acceptFromStorage = () => {
+            const saved = readStorage(STORAGE_AUTH, null);
+            if (!saved?.token || !saved?.user?.login) return;
+            const changed = state.auth.token !== saved.token || state.auth.user?.login !== saved.user.login;
+            state.auth = {
+                token: saved.token,
+                user: saved.user,
+                pushAccess: Boolean(saved.pushAccess),
+                method: saved.method || 'oauth'
+            };
+            if (changed) {
+                emit('auth');
+                emit('oauth-success');
+                if (state.ready) syncDynamic().catch(() => {});
+            }
+        };
+
+        window.addEventListener('storage', (e) => {
+            if (e.key === STORAGE_AUTH) acceptFromStorage();
+        });
+        window.addEventListener('message', (e) => {
+            if (e.origin !== window.location.origin) return;
+            if (e.data?.type === 'hsbtr:oauth-complete') acceptFromStorage();
+            else if (e.data?.type === 'hsbtr:oauth-error') {
+                state.lastOAuthResult = { ok: false, error: e.data.error || 'GitHub OAuth 登入失敗。' };
+                emit('oauth-error');
+            }
+        });
+        if (typeof BroadcastChannel === 'function') {
+            try {
+                const ch = new BroadcastChannel('hsbtr_oauth');
+                ch.onmessage = (e) => {
+                    if (e.data?.type === 'hsbtr:oauth-complete') acceptFromStorage();
+                    else if (e.data?.type === 'hsbtr:oauth-error') {
+                        state.lastOAuthResult = { ok: false, error: e.data.error || 'GitHub OAuth 登入失敗。' };
+                        emit('oauth-error');
+                    }
+                };
+            } catch { /* ignore BroadcastChannel restrictions */ }
+        }
+    }
+
+    function notifyOpener(payload) {
+        try {
+            if (typeof BroadcastChannel === 'function') {
+                const ch = new BroadcastChannel('hsbtr_oauth');
+                ch.postMessage(payload);
+                ch.close();
+            }
+        } catch { /* ignore */ }
+        try {
+            if (window.opener && window.opener !== window) {
+                window.opener.postMessage(payload, window.location.origin);
+            }
+        } catch { /* ignore */ }
+    }
+
+    async function startOAuthLogin() {
+        if (!isOAuthConfigured()) {
+            throw new Error('尚未設定 GitHub OAuth App 與 Cloudflare Worker 端點。');
+        }
+        const oauthState = randomUrlToken(24);
+        const codeVerifier = randomUrlToken(32);
+        const codeChallenge = await createPkceChallenge(codeVerifier);
+        const redirectUri = `${window.location.origin}${window.location.pathname}`;
+
+        writeStorage(STORAGE_OAUTH_TX, {
+            state: oauthState,
+            codeVerifier,
+            redirectUri,
+            popup: true,
+            createdAt: Date.now()
+        });
+
+        const authUrl = new URL('https://github.com/login/oauth/authorize');
+        authUrl.searchParams.set('client_id', CONFIG.oauthClientId.trim());
+        authUrl.searchParams.set('redirect_uri', redirectUri);
+        authUrl.searchParams.set('scope', CONFIG.oauthScope || 'public_repo');
+        authUrl.searchParams.set('state', oauthState);
+        authUrl.searchParams.set('code_challenge', codeChallenge);
+        authUrl.searchParams.set('code_challenge_method', 'S256');
+
+        const popup = window.open(
+            authUrl.toString(),
+            'hsbtr_github_oauth',
+            'width=620,height=760,menubar=no,toolbar=no,location=yes,resizable=yes,scrollbars=yes'
+        );
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+            writeStorage(STORAGE_OAUTH_TX, {
+                state: oauthState,
+                codeVerifier,
+                redirectUri,
+                popup: false,
+                createdAt: Date.now()
+            });
+            window.location.assign(authUrl.toString());
+            return { mode: 'redirect' };
+        }
+        try { popup.focus(); } catch { /* ignore */ }
+        return { mode: 'popup' };
+    }
+
+    async function handleOAuthCallback() {
+        if (typeof window === 'undefined') return { handled: false };
+        const params = new URLSearchParams(window.location.search || '');
+        const code = params.get('code');
+        const returnedState = params.get('state');
+        const oauthError = params.get('error');
+        const oauthErrorDesc = params.get('error_description');
+
+        if (!code && !oauthError) return { handled: false };
+
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+        try {
+            window.history.replaceState({}, document.title, cleanUrl);
+        } catch { /* ignore */ }
+
+        const tx = readStorage(STORAGE_OAUTH_TX, null);
+        writeStorage(STORAGE_OAUTH_TX, null);
+
+        if (oauthError) {
+            const msg = oauthErrorDesc || `已取消 GitHub 授權 (${oauthError})`;
+            state.lastOAuthResult = { ok: false, error: msg };
+            if (tx?.popup) {
+                notifyOpener({ type: 'hsbtr:oauth-error', error: msg });
+                try { window.close(); } catch { /* ignore */ }
+            }
+            return { handled: true, ok: false, error: msg };
+        }
+
+        try {
+            if (!isOAuthConfigured()) {
+                throw new Error('尚未設定 GitHub OAuth 交換端點。');
+            }
+            if (!tx || !tx.state || !returnedState || tx.state !== returnedState || (Date.now() - Number(tx.createdAt || 0)) > 10 * 60 * 1000) {
+                throw new Error('GitHub OAuth state 驗證失敗或已逾時，請重新登入。');
+            }
+            const resp = await fetch(CONFIG.oauthExchangeUrl.trim(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code,
+                    code_verifier: tx.codeVerifier,
+                    redirect_uri: tx.redirectUri
+                })
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data?.access_token) {
+                throw new Error(data?.error_description || data?.error || `OAuth Token 交換失敗 (HTTP ${resp.status})`);
+            }
+            const auth = await verifyToken(data.access_token, { skipSync: true, authMethod: 'oauth' });
+            state.lastOAuthResult = { ok: true, auth };
+            if (tx.popup) {
+                notifyOpener({ type: 'hsbtr:oauth-complete', login: auth.user?.login || '' });
+                try { window.close(); } catch { /* ignore */ }
+            }
+            return { handled: true, ok: true, auth };
+        } catch (err) {
+            const msg = err?.message || 'GitHub OAuth 登入失敗。';
+            state.lastOAuthResult = { ok: false, error: msg };
+            if (tx?.popup) {
+                notifyOpener({ type: 'hsbtr:oauth-error', error: msg });
+                try { window.close(); } catch { /* ignore */ }
+            }
+            return { handled: true, ok: false, error: msg };
+        }
+    }
+
+    function consumeOAuthResult() {
+        const res = state.lastOAuthResult;
+        state.lastOAuthResult = null;
+        return res;
+    }
+
     async function init() {
+        installPopupBridge();
         const savedAuth = readStorage(STORAGE_AUTH, null);
         if (savedAuth?.token) {
             state.auth.token = savedAuth.token;
             state.auth.user = savedAuth.user || null;
             state.auth.pushAccess = Boolean(savedAuth.pushAccess);
+            state.auth.method = savedAuth.method || 'pat';
         }
         state.pendingSubmissions = readStorage(STORAGE_PENDING, []);
+
+        const cbRes = await handleOAuthCallback();
 
         await Promise.all(BASE_FILES.map(async (name) => {
             const resp = await fetch(`./data/base/${name}.json`);
@@ -244,9 +459,9 @@
             state.base[name] = await resp.json();
         }));
 
-        if (state.auth.token) {
+        if (state.auth.token && !cbRes?.ok) {
             try {
-                await verifyToken(state.auth.token, { skipSync: true });
+                await verifyToken(state.auth.token, { skipSync: true, authMethod: state.auth.method });
             } catch {
                 // Keep token if offline, clear only on 401
             }
@@ -286,7 +501,7 @@
         if (!silent) emit('update');
     }
 
-    async function verifyToken(token, { skipSync = false } = {}) {
+    async function verifyToken(token, { skipSync = false, authMethod = 'pat' } = {}) {
         const cleanTok = String(token || '').trim();
         if (!cleanTok) throw new Error('請輸入 GitHub Personal Access Token (PAT)。');
         try {
@@ -300,14 +515,14 @@
             } catch {
                 pushAccess = false;
             }
-            state.auth = { token: cleanTok, user, pushAccess };
+            state.auth = { token: cleanTok, user, pushAccess, method: authMethod };
             writeStorage(STORAGE_AUTH, state.auth);
             if (!skipSync && prevTok !== cleanTok) await syncDynamic();
             else emit('auth');
             return state.auth;
         } catch (err) {
             if (err.status === 401 || !skipSync) {
-                state.auth = { token: '', user: null, pushAccess: false };
+                state.auth = { token: '', user: null, pushAccess: false, method: 'pat' };
                 writeStorage(STORAGE_AUTH, null);
                 emit('auth');
             }
@@ -316,7 +531,7 @@
     }
 
     function logout() {
-        state.auth = { token: '', user: null, pushAccess: false };
+        state.auth = { token: '', user: null, pushAccess: false, method: 'pat' };
         writeStorage(STORAGE_AUTH, null);
         emit('auth');
     }
@@ -460,12 +675,14 @@
         return {
             ready: state.ready,
             config: CONFIG,
+            oauthConfigured: isOAuthConfigured(),
             sourceMode: state.sourceMode,
             lastSyncedAt: state.lastSyncedAt,
             auth: {
                 loggedIn: Boolean(state.auth.user?.login),
                 user: state.auth.user,
-                pushAccess: state.auth.pushAccess
+                pushAccess: state.auth.pushAccess,
+                method: state.auth.method || 'pat'
             },
             merged: state.merged,
             reviewIndex: state.reviewIndex,
@@ -496,6 +713,10 @@
         CONFIG,
         STORAGE_CAPTURE,
         init,
+        isOAuthConfigured,
+        startOAuthLogin,
+        handleOAuthCallback,
+        consumeOAuthResult,
         syncDynamic,
         verifyToken,
         logout,
