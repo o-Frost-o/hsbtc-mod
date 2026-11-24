@@ -3,25 +3,23 @@
 適用 **Minecraft 26.2 (Fabric)** 的 Hypixel SkyBlock 非破壞性繁體中文顯示層翻譯模組，並搭配獨立運作的 GitHub Pages 共用翻譯平台。
 
 - 作者：`o.frost.o` (`o-Frost-o`)
-- 獨立翻譯網站：[https://o-frost-o.github.io/hsbtc-mod/](https://o-frost-o.github.io/hsbtc-mod/)
-- 指令說明：
-  - `/hsbtr ui`（或 `/hsbtr web`）：開啟獨立線上翻譯審核平台
-  - `/hsbtr reload`：重新載入本機字典與設定
-  - `/hsbtr status`：檢視各介面類別攔截模式與字典統計
+- 協助翻譯：[https://o-frost-o.github.io/hsbtc-mod/](https://o-frost-o.github.io/hsbtc-mod/)
 
-## 主要特色
+最近發現我AI的額度用不完了，有一天邀請朋友玩Hypixel Skyblock被以不會英文為由回絕後靈感乍現，對阿我把它翻成中文不就行了！ :D
 
-- **非破壞性渲染層翻譯（DISPLAY Mode）**：保留伺服器原始資料，確保與 Skyblocker 等模組相容。
-- **按住 `Alt` / `Shift` 瞬時檢視英文原文**：除道具 Tooltip 外，聊天室中的 NPC / Boss 對話與互動選項亦支援按住 `Alt` 鍵即時切回英文原文預覽。
-- **獨立雲端翻譯網頁（GitHub Pages + IssueOps）**：
-  - 全網頁前端與雲端共享資料庫位於 `docs/`，已從 Mod 本體完全抽離（無需本機伺服器或熱重載）。
-  - 所有編輯與驗證需先完成 GitHub 帳號驗證（支援透過 GitHub 官方 OAuth 授權登入 + [oauth-worker/](oauth-worker/README.md) Cloudflare Worker 代理或 PAT 備援，並支援倉庫協作者直寫與一般貢獻者透過 GitHub Actions IssueOps 自動合併寫入）。
-  - 累積至少 **25 條**唯一翻譯審核驗證的編輯者將自動列入網頁的 **🏆 貢獻者名單**。
+## 功能
 
-## 開發者／Agent 資料庫回寫
+### NPC對話、介面、道具......通通都翻譯了！
 
-若要手動將線上平台累積的 `docs/data/overrides.json` 與 `review_status.json` 同步回 Mod 內建資源字典：
+本模組的目標是將遊戲的所有內容進行翻譯，目前已經翻譯了約90%的文本，資料來源於官方及粉絲Wiki，安裝模組後會自動翻譯內容至中文，在聊天室或道具敘述顯示時按下Alt鍵即可顯示原文。
 
-```bash
-node scripts/sync_cloud_db.mjs
-```
+### 浮動數值翻譯適應及中文倒裝適應
+
+為滿足以上需求，我們將特定的單字或數值賦予一個該文本項目中獨特的Token ID，並在翻譯後的文本將不同Token放到合適的位置中。
+
+舉個例子：You received 1 wood from Charlie 可以對 1 wood 和 Charlie 賦予Token ID-->You received {token:1} from {token:2} --> 你從Charlie獲得了1 wood！
+
+當然，Token本身可以經過翻譯：
+
+你從Charlie獲得了1 wood！ --> 你從查理(Charlie)獲得了1塊木頭！
+
