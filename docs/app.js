@@ -92,24 +92,6 @@
 
     const refreshHeaderAndStatus = () => {
         const snap = HsbtrCloud.getSnapshot();
-        const badge = document.getElementById('conn-badge');
-        const connText = document.getElementById('conn-text');
-        const sbConn = document.getElementById('sb-conn-status');
-
-        if (!snap.ready) {
-            badge.className = 'status-badge';
-            connText.textContent = '載入雲端資料庫…';
-        } else if (snap.pendingCount > 0) {
-            badge.className = 'status-badge connected';
-            connText.textContent = `⏳ 同步寫入中 (${snap.pendingCount})`;
-            sbConn.textContent = `雲端狀態: ⏳ ${snap.pendingCount} 筆提交正由 GitHub Actions 寫入`;
-        } else {
-            const label = snap.sourceMode === 'github-api' ? 'GitHub API 即時同步'
-                : snap.sourceMode === 'github-raw' ? 'GitHub 雲端 HEAD' : '本地靜態快照';
-            badge.className = 'status-badge connected';
-            connText.textContent = label;
-            sbConn.textContent = `雲端狀態: 🟢 ${label} (${snap.config.owner}/${snap.config.repo})`;
-        }
 
         const tokenCount = Object.keys(snap.merged?.tokens || {}).length;
         const itemCount = Object.keys(snap.merged?.items || {}).length;
@@ -134,7 +116,6 @@
 
         const authBtn = document.getElementById('btn-github-auth');
         const userChip = document.getElementById('github-user-chip');
-        const sbAuth = document.getElementById('sb-auth-status');
 
         if (snap.auth.loggedIn && snap.auth.user) {
             const login = snap.auth.user.login;
@@ -145,18 +126,11 @@
             userChip.classList.remove('hidden');
             document.getElementById('github-user-avatar').src = snap.auth.user.avatar_url || '';
             document.getElementById('github-user-login').textContent = '@' + login;
-            const modeEl = document.getElementById('github-auth-mode');
-            const modeLabel = snap.auth.pushAccess ? '直寫授權' : 'IssueOps';
-            modeEl.textContent = modeLabel;
-            modeEl.className = 'auth-mode-pill' + (snap.auth.pushAccess ? '' : ' issueops');
             document.getElementById('github-user-progress').textContent = myCount >= threshold
                 ? `✔ ${myCount} (貢獻者)` : `${myCount} / ${threshold}`;
-            const methodTag = snap.auth.method === 'oauth' ? 'OAuth' : 'PAT';
-            sbAuth.textContent = `GitHub: @${login} (${methodTag} · ${snap.auth.pushAccess ? 'Push 直寫' : 'IssueOps'})`;
         } else {
             authBtn.classList.remove('hidden');
             userChip.classList.add('hidden');
-            sbAuth.textContent = 'GitHub: 未登入（唯讀瀏覽）';
         }
     };
 
@@ -488,7 +462,7 @@
 
         const grid = document.getElementById('contrib-roster-grid');
         if (!official.length) {
-            grid.innerHTML = `<div style="grid-column:1/-1; color:var(--text-secondary); padding:18px; text-align:center; background:var(--bg-input); border-radius:8px;">
+            grid.innerHTML = `<div style="grid-column:1/-1; color:var(--text-secondary); padding:18px; text-align:center; background:var(--bg-input); border:1px solid var(--border-subtle);">
                 目前尚無成員累積達 ${threshold} 條唯一驗證。歡迎至「翻譯審核」分頁參與驗證，成為第一位官方貢獻者！
             </div>`;
         } else {
@@ -545,7 +519,7 @@
         const snap = HsbtrCloud.getSnapshot();
         closeModal('modal-github-auth');
         if (snap.auth.loggedIn && snap.auth.user) {
-            showToast(`已透過 GitHub 官方帳號登入 @${snap.auth.user.login} (${snap.auth.pushAccess ? '直寫模式' : 'IssueOps 模式'})`, 'success');
+            showToast(`已透過 GitHub 官方帳號登入 @${snap.auth.user.login}`, 'success');
         }
     });
     document.addEventListener('hsbtr:cloud-oauth-error', () => {
@@ -617,7 +591,7 @@
             try {
                 const auth = await HsbtrCloud.verifyToken(token, { authMethod: 'pat' });
                 closeModal('modal-github-auth');
-                showToast(`已登入 GitHub 帳號 @${auth.user.login} (${auth.pushAccess ? '直寫模式' : 'IssueOps 模式'})`, 'success');
+                showToast(`已登入 GitHub 帳號 @${auth.user.login}`, 'success');
                 renderContributors();
             } catch (err) {
                 errEl.textContent = err.message;
@@ -839,9 +813,6 @@
             executePreview();
         } catch (err) {
             document.dispatchEvent(new Event('hsbtr:workbench-tokens-error'));
-            document.getElementById('conn-badge').className = 'status-badge disconnected';
-            document.getElementById('conn-text').textContent = '資料庫載入失敗';
-            document.getElementById('sb-conn-status').textContent = `錯誤: ${err.message}`;
             showToast('無法初始化雲端字典: ' + err.message, 'error');
         }
     });
