@@ -349,9 +349,12 @@
         }
     };
 
-    const executePreview = () => {
+    const executePreview = (manual = false) => {
         const snap = HsbtrCloud.getSnapshot();
-        if (!snap.ready) return;
+        if (!snap.ready) {
+            if (manual) showToast('正在載入雲端翻譯字典，請稍候…', 'info');
+            return;
+        }
         const nameInput = document.getElementById('preview-item-name').value.trim();
         const loreLines = document.getElementById('preview-item-lore').value.split('\n');
         const result = HsbtrEngine.previewItem(snap.merged, nameInput, loreLines);
@@ -547,8 +550,9 @@
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
-        State.untranslatedList = HsbtrCloud.readStorage(HsbtrCloud.STORAGE_CAPTURE, []);
-        renderUntranslated();
+        const storedCapture = HsbtrCloud.readStorage(HsbtrCloud.STORAGE_CAPTURE, []);
+        State.untranslatedList = Array.isArray(storedCapture) ? storedCapture : [];
+        try { renderUntranslated(); } catch { State.untranslatedList = []; }
 
         document.querySelectorAll('.nav-tab').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -654,14 +658,25 @@
         });
 
         // Items Search & Modal
+        const itemSearch = document.getElementById('item-search');
+        const itemClear = document.getElementById('item-search-clear');
         let itemDebounce = null;
-        document.getElementById('item-search').addEventListener('input', (e) => {
+        itemSearch.addEventListener('input', (e) => {
+            itemClear?.classList.toggle('hidden', !e.target.value);
             clearTimeout(itemDebounce);
             itemDebounce = setTimeout(() => {
                 State.itemFilter.query = e.target.value;
                 State.itemFilter.page = 1;
                 fetchAndRenderItems();
             }, 180);
+        });
+        itemClear?.addEventListener('click', () => {
+            clearTimeout(itemDebounce);
+            itemSearch.value = '';
+            itemClear.classList.add('hidden');
+            State.itemFilter.query = '';
+            State.itemFilter.page = 1;
+            fetchAndRenderItems();
         });
         document.getElementById('item-category-select').addEventListener('change', (e) => {
             State.itemFilter.category = e.target.value;
@@ -682,14 +697,14 @@
         document.getElementById('btn-save-item').addEventListener('click', saveItemModal);
 
         // Live Preview
-        document.getElementById('btn-execute-preview').addEventListener('click', executePreview);
+        document.getElementById('btn-execute-preview').addEventListener('click', () => executePreview(true));
         document.querySelectorAll('.sample-buttons button').forEach(btn => {
             btn.addEventListener('click', () => {
                 const sample = SAMPLES[btn.getAttribute('data-sample')];
                 if (!sample) return;
                 document.getElementById('preview-item-name').value = sample.name;
                 document.getElementById('preview-item-lore').value = sample.lore.join('\n');
-                executePreview();
+                executePreview(true);
             });
         });
 
@@ -818,7 +833,10 @@
             modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(modal.id); });
         });
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && State.activeModal) closeModal(State.activeModal);
+            if (e.key === 'Escape') {
+                const topVisible = [...document.querySelectorAll('.modal-backdrop:not(.hidden)')].pop();
+                if (topVisible) closeModal(topVisible.id);
+            }
         });
 
         document.getElementById('preview-item-lore').value = SAMPLES.hyperion.lore.join('\n');

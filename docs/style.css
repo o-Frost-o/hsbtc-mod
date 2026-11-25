@@ -773,6 +773,10 @@ body {
     z-index: 1000;
 }
 
+#modal-github-auth {
+    z-index: 1050;
+}
+
 .modal-dialog {
     background-color: var(--bg-panel);
     border: 1px solid var(--border-bright);
@@ -823,7 +827,9 @@ body {
     padding: 12px 18px;
     border-top: 1px solid var(--border-subtle);
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: center;
     gap: 10px;
     background-color: rgba(0, 0, 0, 0.15);
 }

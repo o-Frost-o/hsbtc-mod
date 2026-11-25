@@ -561,7 +561,10 @@
 
     async function save(verify) {
         const entry = state.entry;
-        if (!entry) return;
+        if (!entry) {
+            feedback('目前尚無可儲存的條目，請先等待資料庫載入完成。', 'error');
+            return;
+        }
         const saved = await api(verify ? 'verify' : 'save', {
             id: entry.id, revision: entry.revision, value: value.value, roles, excerpt
         });
@@ -775,6 +778,7 @@
     };
     let extraItemIdCustom = false;
     let extraFocusField = extraValue;
+    let extraSubmitting = false;
 
     const cleanKey = (text, lore) => {
         const normalized = String(text || '').replace(formatting, '').replace(/[\s\u00A0\u2000-\u200B\u3000]+/gu, ' ').trim();
@@ -873,6 +877,9 @@
             }
         }
         updateExtraModeView();
+        if (!window.HsbtrCloud?.getSnapshot().ready) {
+            setExtraStatus('雲端資料庫載入中，完成後即可直接送出。');
+        }
         extraModal.classList.remove('hidden');
         setTimeout(() => {
             if (extraKind.value === 'item') (extraItemEn.value ? extraItemZh : extraItemEn).focus();
@@ -881,34 +888,41 @@
     };
 
     const submitExtra = async (keepOpen) => {
-        if (!window.HsbtrCloud?.getSnapshot().ready) {
-            setExtraStatus('正在初始化雲端資料庫，請稍候…', 'error');
-            return;
-        }
-        const k = extraKind.value;
-        const payload = k === 'item'
-            ? {
-                kind: 'item',
-                itemId: extraItemId.value,
-                nameEn: extraItemEn.value,
-                nameZh: extraItemZh.value,
-                category: extraItemCat.value,
-                rarity: extraItemRarity.value,
-                lore: extraItemLore.value.split('\n'),
-                verify: extraVerify.checked
-            }
-            : {
-                kind: k,
-                source: extraSource.value,
-                value: extraValue.value,
-                verify: extraVerify.checked
-            };
+        if (extraSubmitting) return;
+        extraSubmitting = true;
         const btnNext = document.getElementById('btn-extra-save-next');
         const btnView = document.getElementById('btn-extra-save-view');
-        btnNext.disabled = true;
-        btnView.disabled = true;
-        setExtraStatus('正在驗證並排入上傳佇列…');
+        if (btnNext) btnNext.disabled = true;
+        if (btnView) btnView.disabled = true;
+        const k = extraKind.value;
         try {
+            if (!window.HsbtrCloud?.getSnapshot().ready) {
+                setExtraStatus('正在等待雲端資料庫就緒，請稍候…');
+                if (window.HsbtrCloud?.whenReady) {
+                    await window.HsbtrCloud.whenReady();
+                } else {
+                    setExtraStatus('正在初始化雲端資料庫，請稍候…', 'error');
+                    return;
+                }
+            }
+            const payload = k === 'item'
+                ? {
+                    kind: 'item',
+                    itemId: extraItemId.value,
+                    nameEn: extraItemEn.value,
+                    nameZh: extraItemZh.value,
+                    category: extraItemCat.value,
+                    rarity: extraItemRarity.value,
+                    lore: extraItemLore.value.split('\n'),
+                    verify: extraVerify.checked
+                }
+                : {
+                    kind: k,
+                    source: extraSource.value,
+                    value: extraValue.value,
+                    verify: extraVerify.checked
+                };
+            setExtraStatus('正在驗證並排入上傳佇列…');
             const saved = await window.HsbtrCloud.addExtraTranslation(payload);
             if (keepOpen) {
                 resetExtraInputs({ keepKind: true });
@@ -931,10 +945,22 @@
                 await loadPage(0, { keep: true, selected: saved.id });
             }
         } catch (err) {
-            setExtraStatus(err?.message || '無法新增翻譯內容。', 'error');
+            const msg = err?.message || '無法新增翻譯內容。';
+            setExtraStatus(msg, 'error');
+            if (k === 'item') {
+                if (/道具 ID/.test(msg)) extraItemId?.focus();
+                else if (/英文原名/.test(msg)) extraItemEn?.focus();
+                else if (/中文名稱/.test(msg)) extraItemZh?.focus();
+                else if (/Lore/.test(msg)) extraItemLore?.focus();
+            } else if (/原文/.test(msg)) {
+                extraSource?.focus();
+            } else if (/譯文|統一名詞/.test(msg)) {
+                extraValue?.focus();
+            }
         } finally {
-            btnNext.disabled = false;
-            btnView.disabled = false;
+            extraSubmitting = false;
+            if (btnNext) btnNext.disabled = false;
+            if (btnView) btnView.disabled = false;
         }
     };
 
@@ -982,12 +1008,26 @@
         document.addEventListener('hsbtr:open-extra-modal', event => {
             openExtraModal({ presetKind: event.detail?.kind || '', presetSource: event.detail?.source || '' });
         });
-        window.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && !extraModal.classList.contains('hidden')) {
-                extraModal.classList.add('hidden');
+        document.addEventListener('hsbtr:cloud-ready', () => {
+            if (!extraModal.classList.contains('hidden') && extraStatus?.textContent?.includes('載入中')) {
+                setExtraStatus('✔ 雲端資料庫已就緒。', 'ok');
+            }
+        });
+        document.addEventListener('hsbtr:cloud-auth', () => {
+            if (!extraModal.classList.contains('hidden') && window.HsbtrCloud?.getSnapshot().auth?.loggedIn) {
+                if (extraStatus?.textContent?.includes('GitHub 帳號驗證')) {
+                    setExtraStatus('✔ 已完成 GitHub 登入，請再次點擊送出按鈕。', 'ok');
+                }
             }
         });
     }
 
-    if (window.HsbtrCloud?.getSnapshot().ready) run(() => loadPage(0));
+    if (window.HsbtrCloud?.getSnapshot().ready) {
+        run(() => loadPage(0));
+    } else {
+        openEntry(null);
+        byId('empty').textContent = '正在載入雲端翻譯資料庫，請稍候…';
+        feedback('正在載入雲端翻譯資料庫…');
+        syncControls();
+    }
 })();

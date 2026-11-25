@@ -79,6 +79,7 @@
     let pollTimer = null;
     let flushPromise = null;
     let flushScheduled = false;
+    let initPromise = null;
 
     function emit(eventName = 'update', meta = null) {
         const detail = meta ? { ...getSnapshot(), _meta: meta } : getSnapshot();
@@ -577,42 +578,69 @@
     }
 
     async function init() {
-        installPopupBridge();
-        const savedAuth = readStorage(STORAGE_AUTH, null);
-        if (savedAuth?.token) {
-            state.auth.token = savedAuth.token;
-            state.auth.user = savedAuth.user || null;
-            state.auth.pushAccess = Boolean(savedAuth.pushAccess);
-            state.auth.method = savedAuth.method || 'pat';
-        }
-        state.pendingSubmissions = readStorage(STORAGE_PENDING, []);
-        state.uploadQueue = readStorage(STORAGE_UPLOAD_QUEUE, []);
-
-        const cbRes = await handleOAuthCallback();
-
-        await Promise.all(BASE_FILES.map(async (name) => {
-            const resp = await fetch(`./data/base/${name}.json`);
-            if (!resp.ok) throw new Error(`無法載入基礎字典 base/${name}.json`);
-            state.base[name] = await resp.json();
-        }));
-
-        if (state.auth.token && !cbRes?.ok) {
-            try {
-                await verifyToken(state.auth.token, { skipSync: true, authMethod: state.auth.method });
-            } catch {
-                // Keep token if offline, clear only on 401
+        if (initPromise) return initPromise;
+        initPromise = (async () => {
+            installPopupBridge();
+            const savedAuth = readStorage(STORAGE_AUTH, null);
+            if (savedAuth?.token) {
+                state.auth.token = savedAuth.token;
+                state.auth.user = savedAuth.user || null;
+                state.auth.pushAccess = Boolean(savedAuth.pushAccess);
+                state.auth.method = savedAuth.method || 'pat';
             }
-        }
+            const storedPending = readStorage(STORAGE_PENDING, []);
+            state.pendingSubmissions = Array.isArray(storedPending) ? storedPending : [];
+            const storedQueue = readStorage(STORAGE_UPLOAD_QUEUE, []);
+            state.uploadQueue = Array.isArray(storedQueue) ? storedQueue : [];
 
-        await syncDynamic();
-        state.ready = true;
-        emit('ready');
-        if (state.uploadQueue.length > 0 && state.auth.token && state.auth.user?.login) {
-            scheduleUploadFlush();
-        }
+            const cbRes = await handleOAuthCallback();
+
+            const basePromise = Promise.all(BASE_FILES.map(async (name) => {
+                const resp = await fetch(`./data/base/${name}.json`);
+                if (!resp.ok) throw new Error(`無法載入基礎字典 base/${name}.json`);
+                state.base[name] = await resp.json();
+            }));
+
+            const remotePromise = (async () => {
+                if (state.auth.token && !cbRes?.ok) {
+                    try {
+                        await verifyToken(state.auth.token, { skipSync: true, authMethod: state.auth.method });
+                    } catch {
+                        // Keep token if offline, clear only on 401
+                    }
+                }
+                await syncDynamic({ silent: true, deferRecompute: true });
+            })();
+
+            await Promise.all([basePromise, remotePromise]);
+            recomputeEffectiveState();
+            schedulePendingPoll();
+            state.ready = true;
+            emit('update');
+            emit('ready');
+            if (state.uploadQueue.length > 0 && state.auth.token && state.auth.user?.login) {
+                scheduleUploadFlush();
+            }
+        })();
+        return initPromise;
     }
 
-    async function syncDynamic({ silent = false, skipIssues = false, waitQueue = false } = {}) {
+    async function whenReady() {
+        if (state.ready) return;
+        if (initPromise) {
+            await initPromise;
+            return;
+        }
+        await new Promise(resolve => {
+            const onReady = () => {
+                document.removeEventListener('hsbtr:cloud-ready', onReady);
+                resolve();
+            };
+            document.addEventListener('hsbtr:cloud-ready', onReady);
+        });
+    }
+
+    async function syncDynamic({ silent = false, skipIssues = false, waitQueue = false, deferRecompute = false } = {}) {
         if (waitQueue && (flushPromise || state.uploadQueue.length > 0)) {
             await flushUploadQueue();
         }
@@ -629,9 +657,11 @@
                 if (!skipIssues && (!state.auth.pushAccess || state.pendingSubmissions.length > 0)) {
                     await reconcileOpenIssues();
                 }
-                recomputeEffectiveState();
-                schedulePendingPoll();
-                if (!silent) emit('update');
+                if (!deferRecompute) {
+                    recomputeEffectiveState();
+                    schedulePendingPoll();
+                    if (!silent) emit('update');
+                }
                 return;
             } catch {
                 // Fall back to REST / raw / local snapshot
@@ -667,9 +697,11 @@
         if (!skipIssues && ovRes.mode !== 'local' && (!state.auth.pushAccess || state.pendingSubmissions.length > 0)) {
             await reconcileOpenIssues();
         }
-        recomputeEffectiveState();
-        schedulePendingPoll();
-        if (!silent) emit('update');
+        if (!deferRecompute) {
+            recomputeEffectiveState();
+            schedulePendingPoll();
+            if (!silent) emit('update');
+        }
     }
 
     async function verifyToken(token, { skipSync = false, authMethod = 'pat' } = {}) {
@@ -688,8 +720,8 @@
             }
             state.auth = { token: cleanTok, user, pushAccess, method: authMethod };
             writeStorage(STORAGE_AUTH, state.auth);
+            emit('auth');
             if (!skipSync && prevTok !== cleanTok) await syncDynamic();
-            else emit('auth');
             return state.auth;
         } catch (err) {
             if (err.status === 401 || !skipSync) {
@@ -1121,6 +1153,7 @@
         CONFIG,
         STORAGE_CAPTURE,
         init,
+        whenReady,
         isOAuthConfigured,
         startOAuthLogin,
         handleOAuthCallback,
