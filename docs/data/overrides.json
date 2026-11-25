@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-25T05:28:16.515Z",
+  "updatedAt": "2026-11-25T07:25:32.184Z",
   "tokens": {},
   "items": {
     "ACACIA_GENERATOR_11": {
@@ -201,6 +201,16 @@
         "§7已生成資源：§b0",
         "",
         "§9§l稀有"
+      ]
+    },
+    "TEST_ITEM_20261125": {
+      "id": "TEST_ITEM_20261125",
+      "name_en": "test_item_20261125",
+      "name_zh_tw": "測試道具_20261125",
+      "category": "TOOL",
+      "rarity": "SPECIAL",
+      "lore_template": [
+        "test"
       ]
     }
   },
