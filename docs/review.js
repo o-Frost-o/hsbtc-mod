@@ -752,7 +752,7 @@
         const reason = event.detail?._meta?.reason;
         if (reason === 'review-enqueue' || event.detail?._meta?.fromUploadFlush) return;
         if (!state.busy && !pendingDraft() && !parentDraft && window.HsbtrCloud?.getSnapshot().ready) {
-            run(() => loadPage(state.page?.page || 0, { keep: true, selected: selectedId() }));
+            run(() => loadPage(state.page?.page || 0, { keep: Boolean(state.entry), selected: selectedId() }));
         }
     });
 

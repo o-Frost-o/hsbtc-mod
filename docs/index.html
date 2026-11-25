@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hypixel SkyBlock 繁體中文編輯器 (HSBTR)</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='0' fill='%2311221b'/><text y='70' x='15' font-size='65' fill='%23ffaa00'>譯</text></svg>">
-    <link rel="stylesheet" href="style.css?v=20261125-5">
-    <link rel="stylesheet" href="workbench.css?v=20261125-5">
-    <link rel="stylesheet" href="review.css?v=20261125-5">
+    <link rel="stylesheet" href="style.css?v=20261125-6">
+    <link rel="stylesheet" href="workbench.css?v=20261125-6">
+    <link rel="stylesheet" href="review.css?v=20261125-6">
 </head>
 <body>
     <!-- Header -->
@@ -213,7 +213,10 @@
                         <section class="wb-card review-preview" id="review-preview-panel" aria-labelledby="review-preview-heading" hidden>
                             <div class="review-preview-head">
                                 <h3 id="review-preview-heading">即時預覽</h3>
-                                <span>Minecraft 色碼與格式</span>
+                                <div class="review-preview-controls">
+                                    <span>Minecraft 色碼與格式</span>
+                                    <button type="button" class="wb-button wb-secondary btn-toggle-mc-font" aria-pressed="true">Minecraft 字體：開</button>
+                                </div>
                             </div>
                             <div class="review-preview-pair">
                                 <div class="review-preview-column">
@@ -358,7 +361,10 @@
                 <div class="preview-output-card">
                     <div class="card-header">
                         <h2>遊戲內 Tooltip 預覽</h2>
-                        <span class="mc-badge">Minecraft 渲染層</span>
+                        <div class="sample-buttons">
+                            <span class="mc-badge">Minecraft 渲染層</span>
+                            <button type="button" class="btn btn-secondary btn-xs btn-toggle-mc-font" aria-pressed="true">Minecraft 字體：開</button>
+                        </div>
                     </div>
                     <div class="preview-container">
                         <div class="mc-tooltip" id="mc-tooltip-preview">
@@ -764,7 +770,10 @@
                     </div>
 
                     <div class="form-group">
-                        <label>即時預覽（Minecraft 格式渲染）：</label>
+                        <div class="extra-preview-head">
+                            <label>即時預覽（Minecraft 字體與格式渲染）：</label>
+                            <button type="button" class="btn btn-secondary btn-xs btn-toggle-mc-font" aria-pressed="true">Minecraft 字體：開</button>
+                        </div>
                         <div class="review-preview-stage">
                             <div id="extra-preview" class="review-preview-text review-preview-empty">輸入譯文後，即可在這裡預覽。</div>
                         </div>
@@ -811,9 +820,9 @@
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="hsbtr-engine.js?v=20261125-5"></script>
-    <script src="hsbtr-cloud.js?v=20261125-5"></script>
-    <script src="app.js?v=20261125-5"></script>
-    <script src="review.js?v=20261125-5"></script>
+    <script src="hsbtr-engine.js?v=20261125-6"></script>
+    <script src="hsbtr-cloud.js?v=20261125-6"></script>
+    <script src="app.js?v=20261125-6"></script>
+    <script src="review.js?v=20261125-6"></script>
 </body>
 </html>

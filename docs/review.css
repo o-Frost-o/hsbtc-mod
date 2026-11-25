@@ -189,9 +189,13 @@
 #review-feedback[data-tone=error] { color: #9b3428; }
 #review-feedback[data-tone=ok] { color: var(--wb-green-deep); }
 .review-preview { padding: 13px 15px; }
-.review-preview-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 9px; }
+.review-preview-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 9px; }
 .review-preview-head h3 { font-size: 15px; color: #dceee3; }
 .review-preview-head span { color: var(--wb-muted); font-size: 11px; }
+.review-preview-controls { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-preview-controls .btn-toggle-mc-font { min-height: 28px; padding: 3px 9px; font-size: 11px; }
+.extra-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.extra-preview-head label { margin-bottom: 0; }
 .review-preview-stage {
     background: #0b1612; border: 1px solid #254135; padding: 12px; border-radius: 0;
     display: flex; align-items: flex-start; min-height: 95px;
@@ -203,12 +207,22 @@
 .review-rule-regex summary { cursor: pointer; width: max-content; }
 .review-rule-regex code { overflow-wrap: anywhere; white-space: pre-wrap; }
 .review-preview-text {
-    min-width: min(100%, 245px); max-width: 100%; padding: 9px 13px;
+    min-width: min(100%, 245px); max-width: 100%; padding: 10px 13px;
     background: #08120e; border: 1px solid #35634e; box-shadow: inset 0 0 0 1px #1d3c2e;
-    border-radius: 0; color: #eaf4ef; font-size: 15px; line-height: 1.7;
+    border-radius: 0; color: #eaf4ef;
+    font-family: var(--font-mc); font-size: 16px; line-height: 1.75;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.85);
+    -webkit-font-smoothing: none;
     white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4;
 }
-.review-preview-text.review-preview-empty { color: #7e9e8e; }
+.review-preview-text .review-bold { font-weight: 700; }
+.review-preview-text span[style*="#000000"],
+.review-preview-text span[style*="rgb(0, 0, 0)"] { text-shadow: none; }
+.review-preview-text.review-preview-empty { color: #7e9e8e; text-shadow: none; }
+html[data-mc-font="system"] .review-preview-text {
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.7; text-shadow: none; -webkit-font-smoothing: auto;
+}
 .extra-verify-check {
     display: inline-flex; align-items: center; gap: 8px;
     font-size: 13px; color: var(--text-primary); cursor: pointer;

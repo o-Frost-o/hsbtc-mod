@@ -58,6 +58,18 @@
         activeModal: null
     };
 
+    const STORAGE_PREVIEW_FONT = 'hsbtr.preview_font.v1';
+    const applyPreviewFontMode = (mode) => {
+        const clean = mode === 'system' ? 'system' : 'mc';
+        document.documentElement.setAttribute('data-mc-font', clean);
+        HsbtrCloud.writeStorage(STORAGE_PREVIEW_FONT, clean);
+        const active = clean === 'mc';
+        document.querySelectorAll('.btn-toggle-mc-font').forEach(btn => {
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            btn.textContent = active ? 'Minecraft 字體：開' : 'Minecraft 字體：關';
+        });
+    };
+
     const showToast = (message, type = 'info') => {
         const container = document.getElementById('toast-container');
         if (!container) return;
@@ -515,7 +527,14 @@
         if (document.getElementById('tab-contributors').classList.contains('active')) renderContributors();
     };
 
-    document.addEventListener('hsbtr:cloud-ready', handleCloudStateChange);
+    document.addEventListener('hsbtr:cloud-ready', (event) => {
+        handleCloudStateChange(event);
+        if (document.fonts?.load) {
+            document.fonts.load('400 16px "MinecraftUI"').catch(() => {});
+            document.fonts.load('700 16px "MinecraftUI"').catch(() => {});
+            document.fonts.load('400 16px "Cubic 11"').catch(() => {});
+        }
+    });
     document.addEventListener('hsbtr:cloud-update', handleCloudStateChange);
     document.addEventListener('hsbtr:cloud-auth', () => {
         refreshHeaderAndStatus();
@@ -553,6 +572,13 @@
         const storedCapture = HsbtrCloud.readStorage(HsbtrCloud.STORAGE_CAPTURE, []);
         State.untranslatedList = Array.isArray(storedCapture) ? storedCapture : [];
         try { renderUntranslated(); } catch { State.untranslatedList = []; }
+        applyPreviewFontMode(HsbtrCloud.readStorage(STORAGE_PREVIEW_FONT, 'mc'));
+        document.addEventListener('click', (e) => {
+            const fontBtn = e.target.closest('.btn-toggle-mc-font');
+            if (!fontBtn) return;
+            const cur = document.documentElement.getAttribute('data-mc-font');
+            applyPreviewFontMode(cur === 'system' ? 'mc' : 'system');
+        });
 
         document.querySelectorAll('.nav-tab').forEach(btn => {
             btn.addEventListener('click', () => {

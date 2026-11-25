@@ -616,7 +616,6 @@
             recomputeEffectiveState();
             schedulePendingPoll();
             state.ready = true;
-            emit('update');
             emit('ready');
             if (state.uploadQueue.length > 0 && state.auth.token && state.auth.user?.login) {
                 scheduleUploadFlush();
