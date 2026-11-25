@@ -717,7 +717,7 @@
         if (pendingDraft() || window.HsbtrCloud?.hasPendingUploads?.()) event.preventDefault();
     });
 
-    document.addEventListener('hsbtr:workbench-tokens', event => {
+    document.addEventListener('hsbtr:glossary-tokens', event => {
         glossary = event.detail || {};
         if (state.page) renderQueue();
         if (state.entry) renderDraft();

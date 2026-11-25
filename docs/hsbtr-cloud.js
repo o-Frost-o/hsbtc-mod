@@ -1135,33 +1135,6 @@
         saveToken: (record) => commitOps([{ type: 'token', token: record }], `更新詞彙 {${record.tokenId}}`),
         importCsvTokens: (tokens) => commitOps([{ type: 'tokens_batch', tokens }], `CSV 批次匯入 ${tokens.length} 筆詞彙`),
         saveItem: (item) => commitOps([{ type: 'item', item }], `更新道具 ${item.id}`),
-        lookupWorkbench: (kind, source) => {
-            const clean = String(source || '').trim();
-            const m = state.merged;
-            let existing = null;
-            if (kind === 'paragraph') existing = m?.lore_lines?.paragraphs?.[clean] || m?.lore_lines?.lines?.[clean] || null;
-            else if (kind === 'menu') existing = m?.menus?.lines?.[clean] || null;
-            else if (kind === 'title') existing = m?.menus?.titles?.[clean] || null;
-            else if (kind === 'dialogue') {
-                const raw = m?.dialogues?.dialogues?.[clean];
-                existing = typeof raw === 'string' ? raw : raw?.zh_tw || null;
-            }
-            return { existing };
-        },
-        previewWorkbench: (payload) => {
-            const res = HsbtrEngine.previewWorkbenchDraft(state.merged, payload.kind, payload.source, payload.translation, payload.roles);
-            const lookupRes = root.HsbtrCloud.lookupWorkbench(payload.kind, payload.source);
-            return {
-                preview: res.preview,
-                existing: lookupRes.existing,
-                revision: HsbtrEngine.digest(state.reviewIndex?.size || 0, payload.kind, payload.source)
-            };
-        },
-        saveWorkbench: async (payload) => {
-            const previewRes = root.HsbtrCloud.previewWorkbench(payload);
-            const res = await commitOps([{ type: 'workbench', payload }], `工作台新增 ${payload.kind} 翻譯`);
-            return { ...previewRes, ...res, status: 'saved' };
-        },
         reviewPage: (req) => state.reviewIndex.page(req, state.effectiveReviewStatus),
         reviewNext: (req) => state.reviewIndex.next(req, state.effectiveReviewStatus),
         reviewExcerpt: (req) => state.reviewIndex.excerpt({ ...req, sentence: true }, state.effectiveReviewStatus),

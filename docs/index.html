@@ -41,7 +41,6 @@
     <!-- Navigation Tabs -->
     <nav class="app-nav">
         <button class="nav-tab active" data-tab="review">翻譯審核</button>
-        <button class="nav-tab" data-tab="workbench">翻譯工作台</button>
         <button class="nav-tab" data-tab="tokens">
             <span class="tab-icon">🔤</span> 詞彙對照表
             <span id="badge-token-count" class="tab-counter">0</span>
@@ -227,130 +226,6 @@
                     </div>
                 </div>
             </div>
-        </section>
-        <section id="tab-workbench" class="tab-panel" aria-labelledby="wb-heading">
-            <div class="wb-shell">
-                <header class="wb-heading">
-                    <div>
-                        <h2 id="wb-heading">翻譯工作台</h2>
-                        <p>看完整句意，再安排對象、數值與繁中語序。</p>
-                    </div>
-                    <button type="button" class="wb-button wb-secondary" id="wb-example">載入範例</button>
-                </header>
-
-                <div class="wb-layout">
-                    <section class="wb-editor wb-card" aria-label="編輯譯文">
-                        <div class="wb-editor-toolbar">
-                            <div class="wb-field">
-                                <label for="wb-kind">文字用途</label>
-                                <select id="wb-kind">
-                                    <option value="paragraph">物品／介面說明</option>
-                                    <option value="menu">介面標籤</option>
-                                    <option value="title">介面標題</option>
-                                    <option value="dialogue">NPC／系統訊息</option>
-                                </select>
-                            </div>
-                            <p id="wb-context" class="wb-context">可直接貼上一段原文，或從擷取佇列帶入。</p>
-                            <button class="wb-button wb-link" type="button" id="wb-open-queue">開啟擷取佇列 <span aria-hidden="true">↗</span></button>
-                        </div>
-                        <div class="wb-panes">
-                            <div class="wb-pane wb-source-pane">
-                                <div class="wb-pane-heading"><label for="wb-source">原文</label><span>EN</span></div>
-                                <textarea id="wb-source" rows="8" maxlength="1200" lang="en" spellcheck="false"
-                                    placeholder="貼上完整英文原文，可保留原有換行。"></textarea>
-                                <div class="wb-pane-footer">
-                                    <button class="wb-button wb-mark" type="button" id="wb-mark">＋ 標記選取文字</button>
-                                    <span id="wb-count">0 / 300</span>
-                                </div>
-                            </div>
-                            <div class="wb-pane wb-target-pane">
-                                <div class="wb-pane-heading"><label for="wb-target">繁中譯文</label><span>ZH-TW</span></div>
-                                <textarea id="wb-target" rows="8" maxlength="1200" spellcheck="false"
-                                    placeholder="依繁中語序寫下完整譯文。"></textarea>
-                                <div class="wb-pane-footer">
-                                    <button class="wb-button wb-link" type="button" id="wb-use-existing" disabled>引用現有譯文</button>
-                                    <span id="wb-target-count">0 字元</span>
-                                </div>
-                            </div>
-                        </div>
-                        <section class="wb-roles" aria-labelledby="wb-role-heading">
-                            <div class="wb-section-heading">
-                                <div>
-                                    <h3 id="wb-role-heading">語意 token</h3>
-                                    <p id="wb-role-hint">選取原文中的數值或對象後標記。點擊 token 可插入譯文。</p>
-                                </div>
-                                <span id="wb-role-count" class="wb-tag">0 個</span>
-                            </div>
-                            <div id="wb-roles" class="wb-role-list"></div>
-                        </section>
-                        <div id="wb-checks" class="wb-checks" aria-live="polite"></div>
-                        <footer class="wb-actions">
-                            <p id="wb-feedback" role="status"></p>
-                            <div>
-                                <button class="wb-button wb-secondary" type="button" id="wb-verify">核對預覽</button>
-                                <button class="wb-button wb-primary" type="button" id="wb-save" disabled>儲存至雲端</button>
-                            </div>
-                        </footer>
-                    </section>
-
-                    <aside class="wb-side" aria-label="預覽與名詞表">
-                        <section class="wb-card wb-preview">
-                            <div class="wb-section-heading">
-                                <h3>顯示預覽</h3>
-                                <span id="wb-preview-label" class="wb-tag">草稿</span>
-                            </div>
-                            <div class="wb-preview-stage">
-                                <div id="wb-tooltip">
-                                    <span id="wb-preview-context"></span>
-                                    <p id="wb-preview-text"></p>
-                                </div>
-                            </div>
-                            <div class="wb-preview-footer">
-                                <span>提示框換行模擬</span>
-                                <div class="wb-segment" aria-label="預覽寬度">
-                                    <button type="button" id="wb-narrow" aria-pressed="true">窄</button>
-                                    <button type="button" id="wb-wide" aria-pressed="false">寬</button>
-                                </div>
-                            </div>
-                        </section>
-                        <section class="wb-card wb-glossary">
-                            <div class="wb-section-heading">
-                                <h3>統一名詞表</h3>
-                                <span class="wb-tag">雲端字典</span>
-                            </div>
-                            <label class="wb-sr-only" for="wb-glossary-query">搜尋統一名詞表</label>
-                            <input type="search" id="wb-glossary-query" placeholder="搜尋原文、譯名或 Token ID">
-                            <ul id="wb-glossary-results"></ul>
-                        </section>
-                    </aside>
-                </div>
-            </div>
-            <dialog id="wb-role-dialog" aria-labelledby="wb-role-dialog-heading">
-                <form id="wb-role-form">
-                    <h3 id="wb-role-dialog-heading">標記語意 token</h3>
-                    <p id="wb-selection"></p>
-                    <div class="wb-field">
-                        <label for="wb-role-id">Token ID</label>
-                        <input id="wb-role-id" required maxlength="24" pattern="[a-z][a-zA-Z0-9]{0,23}" placeholder="例如 range" spellcheck="false">
-                    </div>
-                    <div class="wb-field">
-                        <label for="wb-role-type">保留方式</label>
-                        <select id="wb-role-type">
-                            <option value="number">數值可變（如 30%、6 或 1.5K）</option>
-                            <option value="fixed">固定名稱／文字</option>
-                        </select>
-                    </div>
-                    <div class="wb-field" id="wb-role-localized-field" hidden>
-                        <label for="wb-role-localized">固定譯名（留空保留原文）</label>
-                        <input id="wb-role-localized" maxlength="120" placeholder="例如 海洋生物">
-                    </div>
-                    <p id="wb-role-error" role="alert"></p>
-                    <div class="wb-dialog-actions">
-                        <button class="wb-button wb-secondary" type="button" id="wb-role-cancel">取消</button>
-                        <button class="wb-button wb-primary" type="submit">確認標記</button>
-                    </div>
-                </form>
-            </dialog>
         </section>
 
         <!-- Tab 1: Tokens -->
@@ -817,7 +692,6 @@
     <script src="hsbtr-engine.js"></script>
     <script src="hsbtr-cloud.js"></script>
     <script src="app.js"></script>
-    <script src="workbench.js"></script>
     <script src="review.js"></script>
 </body>
 </html>

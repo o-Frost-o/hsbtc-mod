@@ -392,7 +392,7 @@
                 <td>${parseMinecraftText(r.rawText || r.cleanText)}</td>
                 <td><span class="category-tag">${escapeHtml(r.seenCount || 1)} 次</span></td>
                 <td class="text-center">
-                    <button class="btn btn-primary btn-xs btn-workbench-capture" data-hash="${escapeHtml(r.hash)}">翻譯</button>
+                    <button class="btn btn-primary btn-xs btn-review-capture" data-query="${escapeHtml(r.cleanText || '')}" title="前往翻譯審核搜尋此段文字">審核</button>
                     <button class="btn btn-secondary btn-xs btn-promote-token" data-text="${escapeHtml(r.cleanText)}">+ 詞條</button>
                 </td>
             </tr>
@@ -504,7 +504,7 @@
         refreshHeaderAndStatus();
         if (event?.detail?._meta?.reason !== 'review-enqueue') {
             State.tokens = snap.merged?.tokens || {};
-            document.dispatchEvent(new CustomEvent('hsbtr:workbench-tokens', { detail: State.tokens }));
+            document.dispatchEvent(new CustomEvent('hsbtr:glossary-tokens', { detail: State.tokens }));
         }
         if (document.getElementById('tab-tokens').classList.contains('active')) renderTokens();
         if (document.getElementById('tab-items').classList.contains('active')) fetchAndRenderItems();
@@ -715,10 +715,16 @@
             renderUntranslated();
         });
         document.getElementById('capture-tbody').addEventListener('click', (e) => {
-            const translate = e.target.closest('.btn-workbench-capture');
-            if (translate) {
-                const item = State.untranslatedList.find(r => r.hash === translate.dataset.hash);
-                if (item) document.dispatchEvent(new CustomEvent('hsbtr:workbench-source', { detail: item }));
+            const reviewBtn = e.target.closest('.btn-review-capture');
+            if (reviewBtn) {
+                const qText = reviewBtn.getAttribute('data-query') || '';
+                const reviewTabBtn = document.querySelector('.nav-tab[data-tab="review"]');
+                reviewTabBtn?.click();
+                const reviewQuery = document.getElementById('review-query');
+                if (reviewQuery) {
+                    reviewQuery.value = qText;
+                    reviewQuery.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+                }
                 return;
             }
             const btn = e.target.closest('.btn-promote-token');
@@ -818,7 +824,6 @@
             }
             executePreview();
         } catch (err) {
-            document.dispatchEvent(new Event('hsbtr:workbench-tokens-error'));
             showToast('無法初始化雲端字典: ' + err.message, 'error');
         }
     });
