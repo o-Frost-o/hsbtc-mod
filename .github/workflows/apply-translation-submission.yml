@@ -90,16 +90,10 @@ jobs:
               state_reason: status === 'applied' ? 'completed' : 'not_planned'
             });
 
-  deploy:
+  build_pages:
     needs: apply
     if: needs.apply.outputs.committed == 'true'
-    concurrency:
-      group: pages
-      cancel-in-progress: false
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout updated docs
         uses: actions/checkout@v4
@@ -114,6 +108,16 @@ jobs:
         with:
           path: docs
 
+  deploy:
+    needs: build_pages
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
