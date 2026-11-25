@@ -70,7 +70,10 @@
         <section id="tab-review" class="tab-panel active" aria-labelledby="review-heading">
             <div class="wb-shell review-shell">
                 <header class="wb-heading review-heading">
-                    <h2 id="review-heading">翻譯審核</h2>
+                    <div class="review-heading-title">
+                        <h2 id="review-heading">翻譯審核</h2>
+                        <button type="button" id="btn-open-extra-modal" class="wb-button wb-primary">＋ 新增額外翻譯內容</button>
+                    </div>
                     <div class="review-progress">
                         <p id="review-count">正在載入字典…</p>
                         <progress id="review-progress" max="1" value="0" aria-label="目前範圍的審核進度"></progress>
@@ -659,6 +662,125 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-close="modal-item">取消</button>
                 <button id="btn-save-item" class="btn btn-primary">儲存道具</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Extra Translation Modal -->
+    <div id="modal-extra-translation" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h3>＋ 新增額外翻譯內容</h3>
+                <button class="modal-close" data-close="modal-extra-translation">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="extra-translation-form">
+                    <div class="form-group">
+                        <label for="extra-kind">翻譯內容類型：</label>
+                        <select id="extra-kind" class="form-control">
+                            <option value="dialogue">NPC 對話 (dialogues)</option>
+                            <option value="person">人物／NPC 名稱 (menus.people)</option>
+                            <option value="uiLine">UI 介面文字／按鈕 (menus.lines)</option>
+                            <option value="uiName">UI 介面標題 (menus.titles)</option>
+                            <option value="loreLine">道具／附魔單行說明 (lore_lines.lines)</option>
+                            <option value="paragraph">道具／附魔段落說明 (lore_lines.paragraphs)</option>
+                            <option value="item">道具名稱與 Lore 說明 (items)</option>
+                        </select>
+                    </div>
+
+                    <div id="extra-text-fields">
+                        <div class="form-group">
+                            <label for="extra-source">英文原文（自動去除色碼並對齊比對鍵名）：</label>
+                            <textarea id="extra-source" class="form-control" rows="2" placeholder="輸入遊戲內的英文原文，例如：Speak with the Blacksmith!" spellcheck="false"></textarea>
+                            <p id="extra-existing-hint" class="extra-hint-text"></p>
+                        </div>
+                        <div class="form-group">
+                            <label for="extra-value">繁體中文譯文（支援 § 色碼與 {TOKEN_ID}）：</label>
+                            <textarea id="extra-value" class="form-control" rows="3" placeholder="輸入繁體中文翻譯內容…" spellcheck="false"></textarea>
+                        </div>
+                    </div>
+
+                    <div id="extra-item-fields" class="hidden">
+                        <div class="form-row">
+                            <div class="form-group col-6">
+                                <label for="extra-item-en">道具英文原名：</label>
+                                <input type="text" id="extra-item-en" class="form-control" placeholder="例如：Hyperion">
+                            </div>
+                            <div class="form-group col-6">
+                                <label for="extra-item-id">道具 ID（自動產生或自訂全大寫）：</label>
+                                <input type="text" id="extra-item-id" class="form-control" placeholder="例如：HYPERION" spellcheck="false">
+                            </div>
+                        </div>
+                        <p id="extra-item-existing-hint" class="extra-hint-text"></p>
+                        <div class="form-row">
+                            <div class="form-group col-6">
+                                <label for="extra-item-zh">道具繁體中文名稱：</label>
+                                <input type="text" id="extra-item-zh" class="form-control" placeholder="例如：§d亥伯龍（Hyperion）">
+                            </div>
+                            <div class="form-group col-3">
+                                <label for="extra-item-cat">類別：</label>
+                                <select id="extra-item-cat" class="form-control">
+                                    <option value="MISC">MISC</option>
+                                    <option value="SWORD">SWORD</option>
+                                    <option value="BOW">BOW</option>
+                                    <option value="ARMOR">ARMOR</option>
+                                    <option value="TOOL">TOOL</option>
+                                    <option value="ACCESSORY">ACCESSORY</option>
+                                    <option value="PET">PET</option>
+                                    <option value="REFORGE_STONE">REFORGE_STONE</option>
+                                    <option value="MATERIAL">MATERIAL</option>
+                                </select>
+                            </div>
+                            <div class="form-group col-3">
+                                <label for="extra-item-rarity">稀有度：</label>
+                                <select id="extra-item-rarity" class="form-control">
+                                    <option value="COMMON">COMMON</option>
+                                    <option value="UNCOMMON">UNCOMMON</option>
+                                    <option value="RARE">RARE</option>
+                                    <option value="EPIC">EPIC</option>
+                                    <option value="LEGENDARY">LEGENDARY</option>
+                                    <option value="MYTHIC">MYTHIC</option>
+                                    <option value="DIVINE">DIVINE</option>
+                                    <option value="SPECIAL">SPECIAL</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="extra-item-lore">Lore 說明模板（選填，每行一條）：</label>
+                            <textarea id="extra-item-lore" class="form-control lore-editor" rows="4" placeholder="每行代表一條道具說明…"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="review-format-tools" id="extra-format-tools" role="group" aria-label="插入 Minecraft 格式" style="margin-bottom: 12px;">
+                        <details class="review-colors">
+                            <summary class="wb-button wb-secondary"><span class="review-color-sample" aria-hidden="true"></span> 文字顏色</summary>
+                            <div class="review-color-menu" id="extra-colors"></div>
+                        </details>
+                        <button type="button" class="wb-button wb-secondary review-bold" data-code="l" title="粗體 §l">B</button>
+                        <button type="button" class="wb-button wb-secondary review-italic" data-code="o" title="斜體 §o">I</button>
+                        <button type="button" class="wb-button wb-secondary review-under" data-code="n" title="底線 §n">U</button>
+                        <button type="button" class="wb-button wb-secondary review-strike" data-code="m" title="刪除線 §m">S</button>
+                        <button type="button" class="wb-button wb-secondary" data-code="r" title="清除格式 §r">清除格式</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label>即時預覽（Minecraft 格式渲染）：</label>
+                        <div class="review-preview-stage">
+                            <div id="extra-preview" class="review-preview-text review-preview-empty">輸入譯文後，即可在這裡預覽。</div>
+                        </div>
+                    </div>
+
+                    <label class="extra-verify-check">
+                        <input type="checkbox" id="extra-verify" checked>
+                        <span>同時標記為已驗證（立即寫入審核進度並計入貢獻者統計）</span>
+                    </label>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <span id="extra-status" class="extra-status-text"></span>
+                <button type="button" class="btn btn-secondary" data-close="modal-extra-translation">取消</button>
+                <button type="button" id="btn-extra-save-next" class="btn btn-secondary">儲存並新增下一筆</button>
+                <button type="button" id="btn-extra-save-view" class="btn btn-primary">新增並寫入雲端</button>
             </div>
         </div>
     </div>

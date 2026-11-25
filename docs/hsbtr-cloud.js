@@ -274,12 +274,20 @@
         const validQueue = [];
         for (const qItem of state.uploadQueue) {
             try {
-                const rid = qItem.op?.type === 'review' ? qItem.op.review?.id : '';
-                if (rid && !state.preQueueReviewEntries.has(rid)) {
-                    const existingEntry = reviewIndex.lookup(rid);
-                    if (existingEntry) state.preQueueReviewEntries.set(rid, snapshotPreQueueEntry(existingEntry));
-                }
                 const res = HsbtrEngine.applyOperation(ov, rs, qItem.op, state.base, { merged, reviewIndex });
+                const touched = res.reviewPatch?.extraPatches?.length
+                    ? res.reviewPatch.extraPatches
+                    : (res.reviewPatch?.entry ? [res.reviewPatch.entry] : []);
+                const ids = [];
+                for (const t of touched) {
+                    if (!t?.id) continue;
+                    ids.push(t.id);
+                    if (!state.preQueueReviewEntries.has(t.id)) {
+                        const existingEntry = reviewIndex.lookup(t.id);
+                        state.preQueueReviewEntries.set(t.id, existingEntry ? snapshotPreQueueEntry(existingEntry) : null);
+                    }
+                }
+                if (ids.length) qItem.affectedIds = ids;
                 ov = res.overrides;
                 rs = res.reviewStatus;
                 HsbtrEngine.applyMergedPatch(merged, reviewIndex, res);
@@ -721,7 +729,9 @@
 
         const batchUpdated = new Map();
         const batchIdx = baseContext?.reviewIndex ? {
-            lookup: (id) => batchUpdated.get(id) || state.preQueueReviewEntries.get(id) || baseContext.reviewIndex.lookup(id),
+            lookup: (id) => batchUpdated.has(id)
+                ? batchUpdated.get(id)
+                : (state.preQueueReviewEntries.has(id) ? state.preQueueReviewEntries.get(id) : baseContext.reviewIndex.lookup(id)),
             entryRevision: baseContext.reviewIndex.entryRevision,
             excerpt: baseContext.reviewIndex.excerpt
         } : null;
@@ -734,8 +744,11 @@
             for (const f of res.changedFiles) changedFiles.add(f);
             verifiedIds.push(...res.verifiedEntryIds);
             editCount += res.editCount;
-            if (res.reviewPatch?.entry) {
-                batchUpdated.set(res.reviewPatch.entry.id, res.reviewPatch.entry);
+            const touched = res.reviewPatch?.extraPatches?.length
+                ? res.reviewPatch.extraPatches
+                : (res.reviewPatch?.entry ? [res.reviewPatch.entry] : []);
+            for (const t of touched) {
+                if (t?.id) batchUpdated.set(t.id, t);
             }
         }
         return { ov, rs, verifiedIds, editCount, changedFiles, patchMap: batchUpdated };
@@ -970,14 +983,21 @@
                         state.uploadQueue = state.uploadQueue.filter(q => !committedSet.has(q.qid));
                         writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
                         for (const b of batch) {
-                            const rid = b.op?.type === 'review' ? b.op.review?.id : '';
-                            if (!rid) continue;
-                            if (state.uploadQueue.some(q => q.op?.type === 'review' && q.op.review?.id === rid)) {
-                                if (commitPatchMap?.has(rid)) {
-                                    state.preQueueReviewEntries.set(rid, snapshotPreQueueEntry(commitPatchMap.get(rid)));
+                            const rids = Array.isArray(b.affectedIds) && b.affectedIds.length
+                                ? b.affectedIds
+                                : (b.op?.type === 'review' && b.op.review?.id ? [b.op.review.id] : []);
+                            for (const rid of rids) {
+                                const stillQueued = state.uploadQueue.some(q =>
+                                    (Array.isArray(q.affectedIds) && q.affectedIds.includes(rid))
+                                    || (q.op?.type === 'review' && q.op.review?.id === rid)
+                                );
+                                if (stillQueued) {
+                                    if (commitPatchMap?.has(rid)) {
+                                        state.preQueueReviewEntries.set(rid, snapshotPreQueueEntry(commitPatchMap.get(rid)));
+                                    }
+                                } else {
+                                    state.preQueueReviewEntries.delete(rid);
                                 }
-                            } else {
-                                state.preQueueReviewEntries.delete(rid);
                             }
                         }
                         uploadedAny = true;
@@ -1139,57 +1159,79 @@
         reviewNext: (req) => state.reviewIndex.next(req, state.effectiveReviewStatus),
         reviewExcerpt: (req) => state.reviewIndex.excerpt({ ...req, sentence: true }, state.effectiveReviewStatus),
         reviewSave: async (req, verify) => {
-            const auth = requireAuth();
-            const actor = {
-                login: auth.user.login,
-                avatarUrl: auth.user.avatar_url || '',
-                htmlUrl: auth.user.html_url || `https://github.com/${auth.user.login}`
-            };
             const existing = state.reviewIndex.lookup(req.id);
             const label = existing ? (existing.context || existing.target?.key || existing.kind) : req.id.slice(0, 8);
             const op = {
                 type: 'review',
                 review: { id: req.id, revision: req.revision, value: req.value, roles: req.roles, excerpt: req.excerpt, verify }
             };
-            const preEntry = existing && !state.preQueueReviewEntries.has(req.id)
-                ? snapshotPreQueueEntry(existing)
-                : null;
-            const res = HsbtrEngine.applyOperation(
-                state.effectiveOverrides,
-                state.effectiveReviewStatus,
-                op,
-                state.base,
-                { merged: state.merged, reviewIndex: state.reviewIndex }
-            );
-            if (!HsbtrEngine.applyMergedPatch(state.merged, state.reviewIndex, res)) {
-                state.merged = HsbtrEngine.mergeDictionaries(state.base, res.overrides);
-                state.reviewIndex = HsbtrEngine.createReviewIndex(state.merged);
-            }
-            if (preEntry && res.reviewPatch?.changedValue) {
-                state.preQueueReviewEntries.set(req.id, preEntry);
-            }
-            state.effectiveOverrides = res.overrides;
-            state.effectiveReviewStatus = res.reviewStatus;
-            state.effectiveContributors = HsbtrEngine.updateContributors(state.effectiveContributors, actor, res.verifiedEntryIds, res.editCount);
-
             const summary = `${verify ? '驗證並儲存' : '儲存'}審核條目 ${String(label).slice(0, 48)}`;
-            state.uploadQueue.push({
-                qid: randomUrlToken(8),
-                op,
-                summary,
-                actorLogin: actor.login,
-                enqueuedAt: Date.now()
-            });
-            writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
-            state.uploadState.lastError = '';
-
-            scheduleUploadFlush();
-            emit('upload-status');
-            emit('update', { reason: 'review-enqueue' });
-
-            const updated = state.reviewIndex.lookup(req.id);
-            if (!updated) throw new Error('儲存成功，但找不到更新後條目，請重新同步。');
-            return state.reviewIndex.toJson(updated, state.effectiveReviewStatus);
+            return enqueueInteractiveOp(op, summary, req.id);
+        },
+        addExtraTranslation: async (extra) => {
+            const payload = { ...(extra || {}), verify: extra?.verify !== false };
+            const op = { type: 'extra', extra: payload };
+            const label = payload.kind === 'item'
+                ? `${payload.itemId || payload.nameEn || 'ITEM'}`
+                : String(payload.source || '').trim();
+            const summary = `新增翻譯內容 ${String(label).slice(0, 48)}`;
+            return enqueueInteractiveOp(op, summary);
         }
     };
+
+    function enqueueInteractiveOp(op, summary, preferredId = '') {
+        const auth = requireAuth();
+        const actor = {
+            login: auth.user.login,
+            avatarUrl: auth.user.avatar_url || '',
+            htmlUrl: auth.user.html_url || `https://github.com/${auth.user.login}`
+        };
+        const res = HsbtrEngine.applyOperation(
+            state.effectiveOverrides,
+            state.effectiveReviewStatus,
+            op,
+            state.base,
+            { merged: state.merged, reviewIndex: state.reviewIndex }
+        );
+        const touched = res.reviewPatch?.extraPatches?.length
+            ? res.reviewPatch.extraPatches
+            : (res.reviewPatch?.entry ? [res.reviewPatch.entry] : []);
+        const affectedIds = [];
+        const changed = Boolean(res.reviewPatch?.changedValue);
+        for (const t of touched) {
+            if (!t?.id) continue;
+            affectedIds.push(t.id);
+            if (changed && !state.preQueueReviewEntries.has(t.id)) {
+                const pre = state.reviewIndex.lookup(t.id);
+                state.preQueueReviewEntries.set(t.id, pre ? snapshotPreQueueEntry(pre) : null);
+            }
+        }
+        if (!HsbtrEngine.applyMergedPatch(state.merged, state.reviewIndex, res)) {
+            state.merged = HsbtrEngine.mergeDictionaries(state.base, res.overrides);
+            state.reviewIndex = HsbtrEngine.createReviewIndex(state.merged);
+        }
+        state.effectiveOverrides = res.overrides;
+        state.effectiveReviewStatus = res.reviewStatus;
+        state.effectiveContributors = HsbtrEngine.updateContributors(state.effectiveContributors, actor, res.verifiedEntryIds, res.editCount);
+
+        state.uploadQueue.push({
+            qid: randomUrlToken(8),
+            op,
+            summary,
+            actorLogin: actor.login,
+            affectedIds,
+            enqueuedAt: Date.now()
+        });
+        writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
+        state.uploadState.lastError = '';
+
+        scheduleUploadFlush();
+        emit('upload-status');
+        emit('update', { reason: 'review-enqueue' });
+
+        const targetId = preferredId || res.reviewPatch?.entry?.id || affectedIds[0];
+        const updated = targetId ? state.reviewIndex.lookup(targetId) : null;
+        if (!updated) throw new Error('儲存成功，但找不到更新後條目，請重新同步。');
+        return state.reviewIndex.toJson(updated, state.effectiveReviewStatus);
+    }
 })(typeof globalThis !== 'undefined' ? globalThis : window);

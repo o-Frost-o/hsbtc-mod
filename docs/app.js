@@ -392,7 +392,8 @@
                 <td>${parseMinecraftText(r.rawText || r.cleanText)}</td>
                 <td><span class="category-tag">${escapeHtml(r.seenCount || 1)} 次</span></td>
                 <td class="text-center">
-                    <button class="btn btn-primary btn-xs btn-review-capture" data-query="${escapeHtml(r.cleanText || '')}" title="前往翻譯審核搜尋此段文字">審核</button>
+                    <button class="btn btn-primary btn-xs btn-extra-capture" data-raw="${escapeHtml(r.rawText || r.cleanText || '')}" data-cat="${escapeHtml(r.category || '')}" title="新增為額外翻譯內容">＋ 新增</button>
+                    <button class="btn btn-secondary btn-xs btn-review-capture" data-query="${escapeHtml(r.cleanText || '')}" title="前往翻譯審核搜尋此段文字">審核</button>
                     <button class="btn btn-secondary btn-xs btn-promote-token" data-text="${escapeHtml(r.cleanText)}">+ 詞條</button>
                 </td>
             </tr>
@@ -715,6 +716,16 @@
             renderUntranslated();
         });
         document.getElementById('capture-tbody').addEventListener('click', (e) => {
+            const extraBtn = e.target.closest('.btn-extra-capture');
+            if (extraBtn) {
+                const raw = extraBtn.getAttribute('data-raw') || '';
+                const cat = extraBtn.getAttribute('data-cat') || '';
+                const kindGuess = (cat === 'CHAT' || cat === 'ACTION_BAR') ? 'dialogue'
+                    : (cat === 'CONTAINER_UI') ? 'uiName'
+                    : cat.startsWith('MENU_TOOLTIP') ? 'loreLine' : 'uiLine';
+                document.dispatchEvent(new CustomEvent('hsbtr:open-extra-modal', { detail: { kind: kindGuess, source: raw } }));
+                return;
+            }
             const reviewBtn = e.target.closest('.btn-review-capture');
             if (reviewBtn) {
                 const qText = reviewBtn.getAttribute('data-query') || '';

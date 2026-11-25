@@ -980,6 +980,165 @@
             }
             editCount++;
             changed.push('overrides.json');
+        } else if (op.type === 'extra') {
+            const ex = op.extra || {};
+            const kind = str(ex, 'kind').trim();
+            const mergedBefore = ctx?.merged || mergeDictionaries(baseDicts, nextOv);
+            const revIndex = ctx?.reviewIndex || createReviewIndex(mergedBefore);
+            const EXTRA_KIND_SPEC = {
+                dialogue: { dictionary: 'DIALOGUE', dictKey: 'dialogues', section: 'dialogues', lore: false, allowFlat: true },
+                person: { dictionary: 'MENUS', dictKey: 'menus', section: 'people', lore: false, allowFlat: false },
+                uiName: { dictionary: 'MENUS', dictKey: 'menus', section: 'titles', lore: false, allowFlat: false },
+                uiLine: { dictionary: 'MENUS', dictKey: 'menus', section: 'lines', lore: false, allowFlat: false },
+                loreLine: { dictionary: 'LORE', dictKey: 'lore_lines', section: 'lines', lore: true, allowFlat: true },
+                paragraph: { dictionary: 'LORE', dictKey: 'lore_lines', section: 'paragraphs', lore: true, allowFlat: false }
+            };
+
+            if (kind === 'item') {
+                const rawId = str(ex, 'itemId').trim().toUpperCase().replace(/[^A-Z0-9_.:-]+/g, '_').replace(/^_+|_+$/g, '');
+                const id = rawId.slice(0, 96);
+                assertSafeKey(id, 'itemId');
+                if (!/^[A-Z0-9_.:-]{1,96}$/.test(id)) throw new Error('道具 ID 僅限英數字、底線與符號（_ . : -）。');
+                const nameEn = str(ex, 'nameEn').trim();
+                const nameZh = str(ex, 'nameZh').trim();
+                if (!nameEn || nameEn.length > 200 || nameEn.includes('\0')) throw new Error('請填寫有效的道具英文原名。');
+                if (!nameZh || !stripLegacyColor(nameZh).trim() || nameZh.length > 300 || nameZh.includes('\0')) {
+                    throw new Error('請填寫有效的道具繁體中文名稱。');
+                }
+                const prev = mergedBefore.items?.[id] || null;
+                let loreArr = Array.isArray(ex.lore) ? ex.lore.map(l => String(l ?? '')) : [];
+                while (loreArr.length && !loreArr[loreArr.length - 1].trim()) loreArr.pop();
+                if (loreArr.every(l => !l.trim())) loreArr = [];
+                if (loreArr.some(l => l.includes('\0') || l.length > 500)) throw new Error('Lore 說明每行不可超過 500 字元。');
+
+                const category = (str(ex, 'category').trim().toUpperCase() || prev?.category || 'MISC').slice(0, 40);
+                const rarity = (str(ex, 'rarity').trim().toUpperCase() || prev?.rarity || 'COMMON').slice(0, 32);
+                const nextLore = loreArr.length ? loreArr : (Array.isArray(prev?.lore_template) ? safeClone(prev.lore_template) : []);
+                const rec = { id, name_en: nameEn, name_zh_tw: nameZh, category, rarity, lore_template: nextLore };
+
+                ensureSection(nextOv, 'items')[id] = rec;
+                editCount++;
+                changed.push('overrides.json');
+
+                const nameTarget = { section: '', key: id, field: 'name_zh_tw', rule: false, role: '', choice: '' };
+                const dispName = itemNameFor(rec, id);
+                const itemNameEntry = {
+                    id: entryId('itemName', nameTarget),
+                    dictionary: 'ITEMS',
+                    kind: 'itemName',
+                    target: nameTarget,
+                    source: dispName,
+                    context: id,
+                    value: nameZh,
+                    format: rarityColor(rec.rarity),
+                    record: rec,
+                    dynamic: null,
+                    _rev: null,
+                    markable: false
+                };
+
+                const extraPatches = [itemNameEntry];
+                let itemLoreEntry = null;
+                if (nextLore.length > 0) {
+                    const loreTarget = { section: '', key: id, field: 'lore_template', rule: false, role: '', choice: '' };
+                    itemLoreEntry = {
+                        id: entryId('itemLore', loreTarget),
+                        dictionary: 'ITEMS',
+                        kind: 'itemLore',
+                        target: loreTarget,
+                        source: str(mergedBefore.item_lore_en, id),
+                        context: dispName === id ? id : `${dispName} · ${id}`,
+                        value: nextLore.join('\n'),
+                        format: '§7',
+                        record: rec,
+                        dynamic: null,
+                        _rev: null,
+                        markable: false
+                    };
+                    extraPatches.push(itemLoreEntry);
+                }
+
+                if (ex.verify !== false) {
+                    nextReview[itemNameEntry.id] = entryRevision(itemNameEntry);
+                    verifiedEntryIds.push(itemNameEntry.id);
+                    if (itemLoreEntry && loreArr.length > 0) {
+                        nextReview[itemLoreEntry.id] = entryRevision(itemLoreEntry);
+                        verifiedEntryIds.push(itemLoreEntry.id);
+                    }
+                    changed.push('review_status.json');
+                }
+                reviewPatch = { entry: itemNameEntry, extraPatches, changedValue: true, newExcerpt: false };
+            } else {
+                const spec = EXTRA_KIND_SPEC[kind];
+                if (!spec) throw new Error('請選擇有效的翻譯內容類型。');
+                const key = cleanSource(str(ex, 'source'), spec.lore).trim();
+                if (!key || key.length > 500 || key.includes('\0') || RESERVED.has(key)) {
+                    throw new Error('請填寫有效的英文原文（1–500 字元）。');
+                }
+                assertSafeKey(key, 'source');
+                const value = str(ex, 'value');
+                if (!value || value.includes('\0') || !stripLegacyColor(value).trim() || value.length > 1500) {
+                    throw new Error('請填寫有效的繁體中文譯文。');
+                }
+                if (spec.dictionary === 'DIALOGUE') {
+                    for (const m of value.matchAll(GLOSSARY_REF_RE)) {
+                        if (!mergedBefore.tokens[m[1]]) {
+                            throw new Error(`統一名詞表沒有 {${m[1]}}。`);
+                        }
+                    }
+                }
+
+                const existingSection = mergedBefore[spec.dictKey]?.[spec.section];
+                const prevRaw = existingSection && Object.hasOwn(existingSection, key) ? existingSection[key] : null;
+                const isObj = spec.allowFlat && isPlainObject(prevRaw);
+                const dObj = ensureSection(nextOv, spec.dictKey);
+                const targetSection = ensureSection(dObj, spec.section);
+
+                let target;
+                let sourceText = key;
+                let contextText = '';
+                let updatedRec = null;
+
+                if (isObj) {
+                    const en = str(prevRaw, 'en');
+                    updatedRec = { ...safeClone(prevRaw), zh_tw: value };
+                    targetSection[key] = updatedRec;
+                    target = { section: spec.section, key, field: 'zh_tw', rule: false, role: '', choice: '' };
+                    sourceText = en || key;
+                    contextText = (!en || en === key) ? '' : key;
+                } else {
+                    targetSection[key] = value;
+                    target = { section: spec.section, key, field: '', rule: false, role: '', choice: '' };
+                }
+                if (dObj.review_patterns?.[spec.section] && Object.hasOwn(dObj.review_patterns[spec.section], key)) {
+                    delete dObj.review_patterns[spec.section][key];
+                }
+
+                editCount++;
+                changed.push('overrides.json');
+
+                const newEntry = {
+                    id: entryId(kind, target),
+                    dictionary: spec.dictionary,
+                    kind,
+                    target,
+                    source: sourceText,
+                    context: contextText,
+                    value,
+                    format: '',
+                    record: updatedRec,
+                    dynamic: null,
+                    _rev: null,
+                    markable: MARKABLE.has(kind) && !SOURCE_REF_RE.test(sourceText)
+                };
+                if (ex.verify !== false) {
+                    nextReview[newEntry.id] = entryRevision(newEntry);
+                    verifiedEntryIds.push(newEntry.id);
+                    changed.push('review_status.json');
+                }
+                reviewPatch = { entry: newEntry, extraPatches: [newEntry], changedValue: true, newExcerpt: false };
+                void revIndex;
+            }
         } else if (op.type === 'review') {
             const mergedBefore = ctx?.merged || mergeDictionaries(baseDicts, nextOv);
             const revIndex = ctx?.reviewIndex || createReviewIndex(mergedBefore);
@@ -1136,53 +1295,53 @@
         };
     }
 
-    /** Patches an existing merged + reviewIndex in-place after applyOperation, avoiding full 113k-entry rebuilds for single review ops. */
+    /** Patches an existing merged + reviewIndex in-place after applyOperation, avoiding full 113k-entry rebuilds for single review or extra ops. */
     function applyMergedPatch(merged, reviewIndex, opResult) {
         if (!merged || !reviewIndex || !opResult?.reviewPatch) return false;
-        const { entry, changedValue, newExcerpt } = opResult.reviewPatch;
+        const { entry, extraPatches, changedValue, newExcerpt } = opResult.reviewPatch;
         if (!entry) return false;
         if (!changedValue) return true;
 
-        const target = entry.target;
-        const dictKeyMap = { ITEMS: 'items', TOKENS: 'tokens', MENUS: 'menus', LORE: 'lore_lines', DIALOGUE: 'dialogues' };
-        const dKey = dictKeyMap[entry.dictionary];
-        const dObj = merged[dKey];
-        if (!dObj) return false;
+        const patchList = Array.isArray(extraPatches) && extraPatches.length ? extraPatches : [entry];
+        for (const itemEntry of patchList) {
+            const target = itemEntry.target;
+            const dictKeyMap = { ITEMS: 'items', TOKENS: 'tokens', MENUS: 'menus', LORE: 'lore_lines', DIALOGUE: 'dialogues' };
+            const dKey = dictKeyMap[itemEntry.dictionary];
+            const dObj = merged[dKey];
+            if (!dObj) return false;
 
-        if (entry.dynamic) {
-            const rp = ensureSection(dObj, 'review_patterns');
-            const scopeMap = ensureSection(rp, target.section || 'root');
-            scopeMap[target.key] = safeClone(entry.dynamic);
-        } else {
-            if (dObj.review_patterns?.[target.section || 'root'] && Object.hasOwn(dObj.review_patterns[target.section || 'root'], target.key)) {
-                delete dObj.review_patterns[target.section || 'root'][target.key];
-            }
-            if (entry.dictionary === 'ITEMS') {
-                dObj[target.key] = safeClone(entry.record);
-            } else if (entry.dictionary === 'TOKENS') {
-                dObj[target.key] = safeClone(entry.record);
-            } else if (target.rule) {
-                const arr = Array.isArray(dObj[target.section]) ? dObj[target.section] : [];
-                const idx = arr.findIndex(x => x && x.regex === target.key);
-                if (idx >= 0) arr[idx] = safeClone(entry.record);
-                else arr.unshift(safeClone(entry.record));
-                dObj[target.section] = arr;
+            if (itemEntry.dynamic) {
+                const rp = ensureSection(dObj, 'review_patterns');
+                const scopeMap = ensureSection(rp, target.section || 'root');
+                scopeMap[target.key] = safeClone(itemEntry.dynamic);
             } else {
-                const container = target.section ? ensureSection(dObj, target.section) : dObj;
-                if (!target.field) container[target.key] = entry.value;
-                else container[target.key] = safeClone(entry.record);
+                if (dObj.review_patterns?.[target.section || 'root'] && Object.hasOwn(dObj.review_patterns[target.section || 'root'], target.key)) {
+                    delete dObj.review_patterns[target.section || 'root'][target.key];
+                }
+                if (itemEntry.dictionary === 'ITEMS') {
+                    dObj[target.key] = safeClone(itemEntry.record);
+                } else if (itemEntry.dictionary === 'TOKENS') {
+                    dObj[target.key] = safeClone(itemEntry.record);
+                } else if (target.rule) {
+                    const arr = Array.isArray(dObj[target.section]) ? dObj[target.section] : [];
+                    const idx = arr.findIndex(x => x && x.regex === target.key);
+                    if (idx >= 0) arr[idx] = safeClone(itemEntry.record);
+                    else arr.unshift(safeClone(itemEntry.record));
+                    dObj[target.section] = arr;
+                } else {
+                    const container = target.section ? ensureSection(dObj, target.section) : dObj;
+                    if (!target.field) container[target.key] = itemEntry.value;
+                    else container[target.key] = safeClone(itemEntry.record);
+                }
             }
-        }
 
-        if (newExcerpt || !entry.target.rule) {
-            reviewIndex.upsertEntry(entry);
-            return true;
-        }
-        reviewIndex.upsertEntry(entry);
-        // Rule edits may share entry.record with child ruleTerm entries; keep ruleTerm records synced
-        for (const child of reviewIndex.entries) {
-            if (child.target.rule && child.target.key === target.key && child.target.section === target.section && child.id !== entry.id) {
-                child.record = entry.record;
+            reviewIndex.upsertEntry(itemEntry);
+            if (!newExcerpt && itemEntry.target.rule) {
+                for (const child of reviewIndex.entries) {
+                    if (child.target.rule && child.target.key === target.key && child.target.section === target.section && child.id !== itemEntry.id) {
+                        child.record = itemEntry.record;
+                    }
+                }
             }
         }
         return true;

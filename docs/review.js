@@ -517,21 +517,27 @@
         syncControls();
     }
 
-    function insert(text, code) {
-        const { selectionStart: start, selectionEnd: end } = value;
+    function applyFormatInsert(targetField, text, code, onAfterInsert) {
+        const { selectionStart: start, selectionEnd: end } = targetField;
         if (code && start !== end && code !== 'r') {
-            const format = styleAt(value.value.slice(0, end));
+            const format = styleAt(targetField.value.slice(0, end));
             const suffix = '§r' + (format.color ? '§' + format.color : '')
                 + [...format.styles].map(style => '§' + style).join('');
-            value.setRangeText(text + value.value.slice(start, end) + suffix, start, end, 'end');
+            targetField.setRangeText(text + targetField.value.slice(start, end) + suffix, start, end, 'end');
         } else if (code) {
-            value.setRangeText(text, start, start, 'end');
+            targetField.setRangeText(text, start, start, 'end');
         } else {
-            value.setRangeText(text, start, end, 'end');
+            targetField.setRangeText(text, start, end, 'end');
         }
-        value.focus();
-        feedback();
-        renderDraft();
+        targetField.focus();
+        if (onAfterInsert) onAfterInsert();
+    }
+
+    function insert(text, code) {
+        applyFormatInsert(value, text, code, () => {
+            feedback();
+            renderDraft();
+        });
     }
 
     async function loadPage(page, { keep = false, selected = '' } = {}) {
@@ -650,15 +656,19 @@
         run(() => loadPage(0));
     }
 
-    for (const [code, [name, rgb]] of Object.entries(colors)) {
-        const button = make('button', undefined, 'review-swatch');
-        button.type = 'button';
-        button.dataset.code = code;
-        button.style.setProperty('--swatch', rgb);
-        button.title = name + ' §' + code;
-        button.setAttribute('aria-label', button.title);
-        byId('colors').append(button);
+    function populateColorSwatches(container) {
+        for (const [code, [name, rgb]] of Object.entries(colors)) {
+            const button = make('button', undefined, 'review-swatch');
+            button.type = 'button';
+            button.dataset.code = code;
+            button.style.setProperty('--swatch', rgb);
+            button.title = name + ' §' + code;
+            button.setAttribute('aria-label', button.title);
+            container.append(button);
+        }
     }
+
+    populateColorSwatches(byId('colors'));
 
     byId('format-tools').addEventListener('click', event => {
         const button = event.target.closest('[data-code]');
@@ -742,5 +752,242 @@
             run(() => loadPage(state.page?.page || 0, { keep: true, selected: selectedId() }));
         }
     });
+
+    // =========================================================================
+    // Add Extra Translation Modal Controller
+    // =========================================================================
+
+    const extraModal = document.getElementById('modal-extra-translation');
+    const extraKind = document.getElementById('extra-kind');
+    const extraSource = document.getElementById('extra-source');
+    const extraValue = document.getElementById('extra-value');
+    const extraItemEn = document.getElementById('extra-item-en');
+    const extraItemId = document.getElementById('extra-item-id');
+    const extraItemZh = document.getElementById('extra-item-zh');
+    const extraItemCat = document.getElementById('extra-item-cat');
+    const extraItemRarity = document.getElementById('extra-item-rarity');
+    const extraItemLore = document.getElementById('extra-item-lore');
+    const extraVerify = document.getElementById('extra-verify');
+    const extraStatus = document.getElementById('extra-status');
+    const RARITY_COLOR = {
+        COMMON: '§f', UNCOMMON: '§a', RARE: '§9', EPIC: '§5',
+        LEGENDARY: '§6', MYTHIC: '§d', DIVINE: '§b', SPECIAL: '§c'
+    };
+    let extraItemIdCustom = false;
+    let extraFocusField = extraValue;
+
+    const cleanKey = (text, lore) => {
+        const normalized = String(text || '').replace(formatting, '').replace(/[\s\u00A0\u2000-\u200B\u3000]+/gu, ' ').trim();
+        return lore ? normalized.replace(/’/g, "'") : normalized;
+    };
+
+    const setExtraStatus = (msg = '', tone = '') => {
+        if (!extraStatus) return;
+        extraStatus.textContent = msg;
+        extraStatus.dataset.tone = tone;
+    };
+
+    const updateExtraModeView = () => {
+        const isItem = extraKind?.value === 'item';
+        document.getElementById('extra-text-fields')?.classList.toggle('hidden', isItem);
+        document.getElementById('extra-item-fields')?.classList.toggle('hidden', !isItem);
+        extraFocusField = isItem ? extraItemZh : extraValue;
+        updateExtraHintsAndPreview();
+    };
+
+    const lookupExistingExtra = (k, rawKey) => {
+        const merged = window.HsbtrCloud?.getSnapshot().merged;
+        if (!merged || !rawKey) return '';
+        if (k === 'item') {
+            const it = merged.items?.[rawKey];
+            return it ? `${it.name_zh_tw || it.name_en || rawKey}` : '';
+        }
+        const map = {
+            dialogue: merged.dialogues?.dialogues,
+            person: merged.menus?.people,
+            uiName: merged.menus?.titles,
+            uiLine: merged.menus?.lines,
+            loreLine: merged.lore_lines?.lines,
+            paragraph: merged.lore_lines?.paragraphs
+        }[k];
+        if (!map || !Object.hasOwn(map, rawKey)) return '';
+        const found = map[rawKey];
+        return typeof found === 'string' ? found : (found?.zh_tw || '');
+    };
+
+    const updateExtraHintsAndPreview = () => {
+        if (!extraKind) return;
+        const k = extraKind.value;
+        const previewEl = document.getElementById('extra-preview');
+        if (k === 'item') {
+            const id = extraItemId.value.trim().toUpperCase();
+            const existing = lookupExistingExtra('item', id);
+            const hintEl = document.getElementById('extra-item-existing-hint');
+            if (hintEl) {
+                hintEl.textContent = !id
+                    ? '將以道具 ID 寫入雲端字庫。'
+                    : (existing ? `💡 目前字庫已存在此道具：${existing}（送出將更新該道具）` : '✨ 新道具：送出後將新增至道具庫與審核清單。');
+            }
+            const format = RARITY_COLOR[extraItemRarity.value] || '§f';
+            const lore = extraItemLore.value.trim();
+            const fullText = [extraItemZh.value, lore].filter(Boolean).join('\n');
+            renderPreview(previewEl, resolveGlossary(fullText), format, '輸入道具名稱後，即可在這裡預覽。');
+        } else {
+            const norm = cleanKey(extraSource.value, k === 'loreLine' || k === 'paragraph');
+            const existing = lookupExistingExtra(k, norm);
+            const hintEl = document.getElementById('extra-existing-hint');
+            if (hintEl) {
+                hintEl.textContent = !norm
+                    ? ''
+                    : (existing ? `💡 字庫已有對應譯文：「${existing}」（送出將更新覆寫）` : '✨ 新條目：儲存後將加入雲端共享字庫。');
+            }
+            renderPreview(previewEl, resolveGlossary(extraValue.value), '', '輸入譯文後，即可在這裡預覽。');
+        }
+    };
+
+    const resetExtraInputs = ({ keepKind = true } = {}) => {
+        if (!keepKind && extraKind) extraKind.value = 'dialogue';
+        if (extraSource) extraSource.value = '';
+        if (extraValue) extraValue.value = '';
+        if (extraItemEn) extraItemEn.value = '';
+        if (extraItemId) extraItemId.value = '';
+        if (extraItemZh) extraItemZh.value = '';
+        if (extraItemCat) extraItemCat.value = 'MISC';
+        if (extraItemRarity) extraItemRarity.value = 'COMMON';
+        if (extraItemLore) extraItemLore.value = '';
+        extraItemIdCustom = false;
+        setExtraStatus();
+        updateExtraModeView();
+    };
+
+    const openExtraModal = ({ presetKind = '', presetSource = '' } = {}) => {
+        if (!extraModal) return;
+        resetExtraInputs({ keepKind: !presetKind });
+        if (presetKind && extraKind) extraKind.value = presetKind;
+        if (presetSource) {
+            if (extraKind.value === 'item') {
+                extraItemEn.value = presetSource.replace(formatting, '').trim();
+                extraItemId.value = extraItemEn.value.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+            } else {
+                extraSource.value = presetSource;
+            }
+        }
+        updateExtraModeView();
+        extraModal.classList.remove('hidden');
+        setTimeout(() => {
+            if (extraKind.value === 'item') (extraItemEn.value ? extraItemZh : extraItemEn).focus();
+            else (extraSource.value ? extraValue : extraSource).focus();
+        }, 0);
+    };
+
+    const submitExtra = async (keepOpen) => {
+        if (!window.HsbtrCloud?.getSnapshot().ready) {
+            setExtraStatus('正在初始化雲端資料庫，請稍候…', 'error');
+            return;
+        }
+        const k = extraKind.value;
+        const payload = k === 'item'
+            ? {
+                kind: 'item',
+                itemId: extraItemId.value,
+                nameEn: extraItemEn.value,
+                nameZh: extraItemZh.value,
+                category: extraItemCat.value,
+                rarity: extraItemRarity.value,
+                lore: extraItemLore.value.split('\n'),
+                verify: extraVerify.checked
+            }
+            : {
+                kind: k,
+                source: extraSource.value,
+                value: extraValue.value,
+                verify: extraVerify.checked
+            };
+        const btnNext = document.getElementById('btn-extra-save-next');
+        const btnView = document.getElementById('btn-extra-save-view');
+        btnNext.disabled = true;
+        btnView.disabled = true;
+        setExtraStatus('正在驗證並排入上傳佇列…');
+        try {
+            const saved = await window.HsbtrCloud.addExtraTranslation(payload);
+            if (keepOpen) {
+                resetExtraInputs({ keepKind: true });
+                setExtraStatus('✔ 已加入雲端上傳佇列，可繼續新增下一筆。', 'ok');
+                await loadPage(state.page?.page || 0, { keep: true, selected: selectedId() });
+                (k === 'item' ? extraItemEn : extraSource).focus();
+            } else {
+                extraModal.classList.add('hidden');
+                if (saved.verified && state.status === 'pending') state.status = 'all';
+                else if (!saved.verified && state.status === 'verified') state.status = 'pending';
+                const reviewNav = document.querySelector('.nav-tab[data-tab="review"]');
+                if (reviewNav && !reviewNav.classList.contains('active')) {
+                    document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                    reviewNav.classList.add('active');
+                    tab.classList.add('active');
+                }
+                openEntry(saved);
+                feedback(saved.verified ? '✔ 已新增額外翻譯內容（已標記驗證）並送往雲端資料庫。' : '✔ 已新增額外翻譯內容並送往雲端資料庫。', 'ok');
+                await loadPage(0, { keep: true, selected: saved.id });
+            }
+        } catch (err) {
+            setExtraStatus(err?.message || '無法新增翻譯內容。', 'error');
+        } finally {
+            btnNext.disabled = false;
+            btnView.disabled = false;
+        }
+    };
+
+    if (extraModal) {
+        populateColorSwatches(document.getElementById('extra-colors'));
+        document.getElementById('extra-format-tools')?.addEventListener('click', event => {
+            const button = event.target.closest('[data-code]');
+            if (!button) return;
+            const code = button.dataset.code;
+            const details = document.getElementById('extra-colors')?.closest('details');
+            if (details) details.open = false;
+            const target = extraFocusField || (extraKind.value === 'item' ? extraItemZh : extraValue);
+            applyFormatInsert(target, '§' + code, code, () => {
+                setExtraStatus();
+                updateExtraHintsAndPreview();
+            });
+        });
+
+        for (const f of [extraValue, extraItemZh, extraItemLore]) {
+            f?.addEventListener('focus', () => { extraFocusField = f; });
+        }
+        extraItemId?.addEventListener('input', () => {
+            extraItemIdCustom = Boolean(extraItemId.value.trim());
+            setExtraStatus();
+            updateExtraHintsAndPreview();
+        });
+        extraItemEn?.addEventListener('input', () => {
+            if (!extraItemIdCustom) {
+                extraItemId.value = extraItemEn.value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+            }
+            setExtraStatus();
+            updateExtraHintsAndPreview();
+        });
+        for (const el of [extraSource, extraValue, extraItemZh, extraItemLore]) {
+            el?.addEventListener('input', () => {
+                setExtraStatus();
+                updateExtraHintsAndPreview();
+            });
+        }
+        extraKind?.addEventListener('change', updateExtraModeView);
+        extraItemRarity?.addEventListener('change', updateExtraHintsAndPreview);
+        document.getElementById('btn-open-extra-modal')?.addEventListener('click', () => openExtraModal());
+        document.getElementById('btn-extra-save-next')?.addEventListener('click', () => submitExtra(true));
+        document.getElementById('btn-extra-save-view')?.addEventListener('click', () => submitExtra(false));
+        document.addEventListener('hsbtr:open-extra-modal', event => {
+            openExtraModal({ presetKind: event.detail?.kind || '', presetSource: event.detail?.source || '' });
+        });
+        window.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && !extraModal.classList.contains('hidden')) {
+                extraModal.classList.add('hidden');
+            }
+        });
+    }
+
     if (window.HsbtrCloud?.getSnapshot().ready) run(() => loadPage(0));
 })();
