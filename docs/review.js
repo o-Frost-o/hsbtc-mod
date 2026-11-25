@@ -561,11 +561,11 @@
         });
         openEntry(saved, { keepParent: !!parentDraft });
         const snap = window.HsbtrCloud?.getSnapshot();
-        const viaIssue = snap && !snap.auth.pushAccess && snap.pendingCount > 0;
+        const uploading = Boolean(snap?.uploading || snap?.uploadQueueCount > 0);
         feedback(
             verify
-                ? (viaIssue ? '已驗證並建立雲端提交（GitHub Actions 寫入中），重新整理也不會遺失。' : '譯文已儲存並驗證寫入雲端資料庫。')
-                : (viaIssue ? '已建立雲端修改提交（GitHub Actions 寫入中）。' : '譯文已儲存至雲端資料庫。'),
+                ? (uploading ? '已驗證，正上傳至雲端資料庫…' : '譯文已儲存並驗證寫入雲端資料庫。')
+                : (uploading ? '已儲存，正上傳至雲端資料庫…' : '譯文已儲存至雲端資料庫。'),
             'ok'
         );
         await loadPage(state.page.page, { keep: true, selected: selectedId() });
@@ -714,7 +714,7 @@
         if (!pendingDraft() && !parentDraft) run(() => loadPage(state.page?.page || 0, { selected: selectedId() }));
     });
     window.addEventListener('beforeunload', event => {
-        if (pendingDraft()) event.preventDefault();
+        if (pendingDraft() || window.HsbtrCloud?.hasPendingUploads?.()) event.preventDefault();
     });
 
     document.addEventListener('hsbtr:workbench-tokens', event => {
@@ -723,7 +723,21 @@
         if (state.entry) renderDraft();
     });
     document.addEventListener('hsbtr:cloud-ready', () => run(() => loadPage(0)));
-    document.addEventListener('hsbtr:cloud-update', () => {
+    document.addEventListener('hsbtr:cloud-upload-status', event => {
+        const d = event.detail;
+        if (!d || d.uploading || d.uploadQueueCount > 0 || d.uploadError) return;
+        const msg = byId('feedback')?.textContent || '';
+        if (msg.includes('正上傳至雲端資料庫')) {
+            feedback(d.auth?.pushAccess ? '✔ 驗證結果已上傳至雲端資料庫。' : '✔ 已建立雲端提交（GitHub Actions 寫入中）。', 'ok');
+        }
+    });
+    document.addEventListener('hsbtr:cloud-upload-error', event => {
+        const msg = event.detail?._meta?.error || event.detail?.uploadError;
+        if (msg) feedback(`雲端上傳失敗：${msg}`, 'error');
+    });
+    document.addEventListener('hsbtr:cloud-update', event => {
+        const reason = event.detail?._meta?.reason;
+        if (reason === 'review-enqueue' || event.detail?._meta?.fromUploadFlush) return;
         if (!state.busy && !pendingDraft() && !parentDraft && window.HsbtrCloud?.getSnapshot().ready) {
             run(() => loadPage(state.page?.page || 0, { keep: true, selected: selectedId() }));
         }

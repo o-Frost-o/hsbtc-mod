@@ -128,7 +128,14 @@
     }
 
     function safeClone(val) {
-        return val == null ? val : JSON.parse(JSON.stringify(val));
+        if (val === null || typeof val !== 'object') return val;
+        if (Array.isArray(val)) return val.map(safeClone);
+        const out = {};
+        for (const [k, v] of Object.entries(val)) {
+            if (UNSAFE_KEYS.has(k)) continue;
+            out[k] = safeClone(v);
+        }
+        return out;
     }
 
     function str(obj, key) {
@@ -137,6 +144,15 @@
 
     function isPlainObject(v) {
         return v !== null && typeof v === 'object' && !Array.isArray(v);
+    }
+
+    function copyBaseMap(src, dst = {}) {
+        if (!isPlainObject(src)) return dst;
+        for (const [k, v] of Object.entries(src)) {
+            if (UNSAFE_KEYS.has(k)) continue;
+            dst[k] = v;
+        }
+        return dst;
     }
 
     function deepCopySafeMap(src, dst = {}) {
@@ -240,9 +256,14 @@
 
     function mergeReviewPatterns(baseRP, overrideRP) {
         const merged = {};
-        for (const src of [baseRP, overrideRP]) {
-            if (!isPlainObject(src)) continue;
-            for (const [scope, map] of Object.entries(src)) {
+        if (isPlainObject(baseRP)) {
+            for (const [scope, map] of Object.entries(baseRP)) {
+                if (UNSAFE_KEYS.has(scope) || !isPlainObject(map)) continue;
+                merged[scope] = copyBaseMap(map, {});
+            }
+        }
+        if (isPlainObject(overrideRP)) {
+            for (const [scope, map] of Object.entries(overrideRP)) {
                 if (UNSAFE_KEYS.has(scope) || !isPlainObject(map)) continue;
                 if (!merged[scope]) merged[scope] = {};
                 deepCopySafeMap(map, merged[scope]);
@@ -254,10 +275,10 @@
     /** Produces merged dictionaries by overlaying overrides cleanly onto immutable base dicts. */
     function mergeDictionaries(base, rawOverrides) {
         const ov = isPlainObject(rawOverrides) ? rawOverrides : createEmptyOverrides();
-        const tokens = deepCopySafeMap(ov.tokens, deepCopySafeMap(base.tokens, {}));
+        const tokens = deepCopySafeMap(ov.tokens, copyBaseMap(base.tokens, {}));
 
         const baseItems = isPlainObject(base.items?.items) ? base.items.items : (base.items || {});
-        const items = deepCopySafeMap(baseItems, {});
+        const items = copyBaseMap(baseItems, {});
         if (isPlainObject(ov.items)) {
             for (const [k, rec] of Object.entries(ov.items)) {
                 if (UNSAFE_KEYS.has(k) || !isPlainObject(rec)) continue;
@@ -269,9 +290,9 @@
         const om = ov.menus || {};
         const menus = {
             meta: bm.meta || {},
-            titles: deepCopySafeMap(om.titles, deepCopySafeMap(bm.titles, {})),
-            lines: deepCopySafeMap(om.lines, deepCopySafeMap(bm.lines, {})),
-            people: deepCopySafeMap(om.people, deepCopySafeMap(bm.people, {})),
+            titles: deepCopySafeMap(om.titles, copyBaseMap(bm.titles, {})),
+            lines: deepCopySafeMap(om.lines, copyBaseMap(bm.lines, {})),
+            people: deepCopySafeMap(om.people, copyBaseMap(bm.people, {})),
             patterns: mergePatternArrays(bm.patterns, om.patterns),
             review_patterns: mergeReviewPatterns(bm.review_patterns, om.review_patterns)
         };
@@ -280,8 +301,8 @@
         const ol = ov.lore_lines || {};
         const lore_lines = {
             meta: bl.meta || {},
-            lines: deepCopySafeMap(ol.lines, deepCopySafeMap(bl.lines, {})),
-            paragraphs: deepCopySafeMap(ol.paragraphs, deepCopySafeMap(bl.paragraphs, {})),
+            lines: deepCopySafeMap(ol.lines, copyBaseMap(bl.lines, {})),
+            paragraphs: deepCopySafeMap(ol.paragraphs, copyBaseMap(bl.paragraphs, {})),
             paragraph_patterns: mergePatternArrays(bl.paragraph_patterns, ol.paragraph_patterns),
             review_patterns: mergeReviewPatterns(bl.review_patterns, ol.review_patterns)
         };
@@ -290,7 +311,7 @@
         const od = ov.dialogues || {};
         const dialogues = {
             meta: bd.meta || {},
-            dialogues: deepCopySafeMap(od.dialogues, deepCopySafeMap(bd.dialogues, {})),
+            dialogues: deepCopySafeMap(od.dialogues, copyBaseMap(bd.dialogues, {})),
             patterns: mergePatternArrays(bd.patterns, od.patterns),
             capture_token_sets: bd.capture_token_sets || {},
             review_patterns: mergeReviewPatterns(bd.review_patterns, od.review_patterns)
@@ -523,6 +544,36 @@
         }
 
         const entries = ordered.map(id => byId.get(id)).filter(Boolean);
+        const byKind = new Map();
+        for (const entry of entries) {
+            let bucket = byKind.get(entry.kind);
+            if (!bucket) {
+                bucket = [];
+                byKind.set(entry.kind, bucket);
+            }
+            bucket.push(entry);
+        }
+
+        function upsertEntry(entry) {
+            const prev = byId.get(entry.id);
+            if (!prev) {
+                entries.push(entry);
+                let bucket = byKind.get(entry.kind);
+                if (!bucket) {
+                    bucket = [];
+                    byKind.set(entry.kind, bucket);
+                }
+                bucket.push(entry);
+            } else {
+                prev.value = entry.value;
+                prev.record = entry.record;
+                prev.dynamic = entry.dynamic;
+                prev._rev = entry._rev ?? null;
+                return prev;
+            }
+            byId.set(entry.id, entry);
+            return entry;
+        }
 
         function isVerified(entry, reviewStatus) {
             const saved = reviewStatus?.[entry.id];
@@ -575,10 +626,11 @@
             const requestedPage = Math.max(0, Number(req.page) || 0);
             const selected = str(req, 'selected');
 
+            const pool = kind ? (byKind.get(kind) || []) : entries;
             const results = [];
             let total = 0, checked = 0;
-            for (const entry of entries) {
-                if (!matches(entry, kind, query)) continue;
+            for (const entry of pool) {
+                if (query && !matches(entry, '', query)) continue;
                 total++;
                 const ver = isVerified(entry, reviewStatus);
                 if (ver) checked++;
@@ -601,14 +653,15 @@
             const after = str(req, 'after');
             const kind = str(req, 'kind');
             const query = str(req, 'query').trim().toLowerCase();
+            const pool = kind ? (byKind.get(kind) || []) : entries;
             let first = null, next = null, passed = !after, idx = 0, nextIdx = 0;
-            for (const entry of entries) {
+            for (const entry of pool) {
                 if (entry.id === after) {
                     passed = true;
-                    if (matches(entry, kind, query) && !isVerified(entry, reviewStatus)) idx++;
+                    if ((!query || matches(entry, '', query)) && !isVerified(entry, reviewStatus)) idx++;
                     continue;
                 }
-                if (!matches(entry, kind, query) || isVerified(entry, reviewStatus)) continue;
+                if ((query && !matches(entry, '', query)) || isVerified(entry, reviewStatus)) continue;
                 if (!first) first = entry;
                 if (passed) { next = entry; nextIdx = idx; break; }
                 idx++;
@@ -659,7 +712,8 @@
             isVerified,
             toJson,
             entryRevision,
-            size: entries.length,
+            upsertEntry,
+            get size() { return entries.length; },
             lookup: id => byId.get(id) || null
         };
     }
@@ -852,17 +906,17 @@
         return out;
     }
 
-    /** Applies one validated operation atomically to cloned overrides + reviewStatus + merged cache. */
-    function applyOperation(overrides, reviewStatus, op, baseDicts) {
+    /** Applies one validated operation atomically to cloned overrides + reviewStatus, with optional cached merged/index reuse. */
+    function applyOperation(overrides, reviewStatus, op, baseDicts, ctx = null) {
         if (!isPlainObject(op) || !op.type) throw new Error('無效的操作格式。');
         const nextOv = safeClone(overrides || createEmptyOverrides());
         const nextReview = safeClone(reviewStatus || {});
         const now = new Date().toISOString();
-        nextOv.updatedAt = now;
 
         const changed = [];
         const verifiedEntryIds = [];
         let editCount = 0;
+        let reviewPatch = null;
 
         const applyTokenRecord = (rawTok) => {
             const id = str(rawTok, 'tokenId').trim().toUpperCase();
@@ -893,7 +947,7 @@
             assertSafeKey(id, 'item.id');
             const name_zh_tw = str(it, 'name_zh_tw').trim();
             if (!name_zh_tw || name_zh_tw.includes('\0')) throw new Error('道具繁體中文名稱為必填項目。');
-            const merged = mergeDictionaries(baseDicts, nextOv);
+            const merged = ctx?.merged || mergeDictionaries(baseDicts, nextOv);
             const prev = merged.items[id] || {};
             ensureSection(nextOv, 'items')[id] = {
                 id,
@@ -927,8 +981,8 @@
             editCount++;
             changed.push('overrides.json');
         } else if (op.type === 'review') {
-            const mergedBefore = mergeDictionaries(baseDicts, nextOv);
-            const revIndex = createReviewIndex(mergedBefore);
+            const mergedBefore = ctx?.merged || mergeDictionaries(baseDicts, nextOv);
+            const revIndex = ctx?.reviewIndex || createReviewIndex(mergedBefore);
             const r = op.review || {};
             const id = str(r, 'id');
             let entry = revIndex.lookup(id);
@@ -992,6 +1046,7 @@
                 }
             }
 
+            let updatedRecord = entry.record;
             const changedValue = newExcerpt || entry.value !== value || JSON.stringify(dynamic) !== JSON.stringify(entry.dynamic);
             if (changedValue) {
                 editCount++;
@@ -1022,10 +1077,13 @@
                             nextItem.name_zh_tw = value;
                         }
                         dObj[target.key] = nextItem;
+                        updatedRecord = nextItem;
                     } else if (entry.dictionary === 'TOKENS') {
                         const prev = mergedBefore.tokens[target.key] || {};
                         assertSafeKey(target.key);
-                        dObj[target.key] = { ...safeClone(prev), zh_tw: value };
+                        const nextTok = { ...safeClone(prev), zh_tw: value };
+                        dObj[target.key] = nextTok;
+                        updatedRecord = nextTok;
                     } else if (target.rule) {
                         const arr = Array.isArray(dObj[target.section]) ? [...dObj[target.section]] : [];
                         let ruleObj = arr.find(x => x && x.regex === target.key);
@@ -1036,6 +1094,7 @@
                         if (!target.role) ruleObj[target.field || 'zh_tw'] = value;
                         else ensureSection(ensureSection(ruleObj, 'terms'), target.role)[target.choice] = value;
                         dObj[target.section] = arr;
+                        updatedRecord = ruleObj;
                     } else {
                         const container = target.section ? ensureSection(dObj, target.section) : dObj;
                         assertSafeKey(target.key);
@@ -1045,25 +1104,88 @@
                             const rec = safeClone(entry.record || {});
                             rec[target.field] = value;
                             container[target.key] = rec;
+                            updatedRecord = rec;
                         }
                     }
                 }
             }
 
+            const updatedEntry = changedValue
+                ? { ...entry, value, dynamic, record: updatedRecord, _rev: null }
+                : entry;
             if (r.verify) {
-                const mergedAfter = mergeDictionaries(baseDicts, nextOv);
-                const idxAfter = createReviewIndex(mergedAfter);
-                const updatedEntry = idxAfter.lookup(id);
-                if (!updatedEntry) throw new Error('無法定位更新後的審核條目。');
-                nextReview[id] = idxAfter.entryRevision(updatedEntry);
+                nextReview[id] = entryRevision(updatedEntry);
                 verifiedEntryIds.push(id);
                 changed.push('review_status.json');
             }
+            reviewPatch = { entry: updatedEntry, newExcerpt, changedValue };
         } else {
             throw new Error(`不支援的操作類型: ${op.type}`);
         }
 
-        return { overrides: nextOv, reviewStatus: nextReview, changedFiles: [...new Set(changed)], verifiedEntryIds, editCount };
+        if (changed.includes('overrides.json')) {
+            nextOv.updatedAt = now;
+        }
+        return {
+            overrides: nextOv,
+            reviewStatus: nextReview,
+            changedFiles: [...new Set(changed)],
+            verifiedEntryIds,
+            editCount,
+            reviewPatch
+        };
+    }
+
+    /** Patches an existing merged + reviewIndex in-place after applyOperation, avoiding full 113k-entry rebuilds for single review ops. */
+    function applyMergedPatch(merged, reviewIndex, opResult) {
+        if (!merged || !reviewIndex || !opResult?.reviewPatch) return false;
+        const { entry, changedValue, newExcerpt } = opResult.reviewPatch;
+        if (!entry) return false;
+        if (!changedValue) return true;
+
+        const target = entry.target;
+        const dictKeyMap = { ITEMS: 'items', TOKENS: 'tokens', MENUS: 'menus', LORE: 'lore_lines', DIALOGUE: 'dialogues' };
+        const dKey = dictKeyMap[entry.dictionary];
+        const dObj = merged[dKey];
+        if (!dObj) return false;
+
+        if (entry.dynamic) {
+            const rp = ensureSection(dObj, 'review_patterns');
+            const scopeMap = ensureSection(rp, target.section || 'root');
+            scopeMap[target.key] = safeClone(entry.dynamic);
+        } else {
+            if (dObj.review_patterns?.[target.section || 'root'] && Object.hasOwn(dObj.review_patterns[target.section || 'root'], target.key)) {
+                delete dObj.review_patterns[target.section || 'root'][target.key];
+            }
+            if (entry.dictionary === 'ITEMS') {
+                dObj[target.key] = safeClone(entry.record);
+            } else if (entry.dictionary === 'TOKENS') {
+                dObj[target.key] = safeClone(entry.record);
+            } else if (target.rule) {
+                const arr = Array.isArray(dObj[target.section]) ? dObj[target.section] : [];
+                const idx = arr.findIndex(x => x && x.regex === target.key);
+                if (idx >= 0) arr[idx] = safeClone(entry.record);
+                else arr.unshift(safeClone(entry.record));
+                dObj[target.section] = arr;
+            } else {
+                const container = target.section ? ensureSection(dObj, target.section) : dObj;
+                if (!target.field) container[target.key] = entry.value;
+                else container[target.key] = safeClone(entry.record);
+            }
+        }
+
+        if (newExcerpt || !entry.target.rule) {
+            reviewIndex.upsertEntry(entry);
+            return true;
+        }
+        reviewIndex.upsertEntry(entry);
+        // Rule edits may share entry.record with child ruleTerm entries; keep ruleTerm records synced
+        for (const child of reviewIndex.entries) {
+            if (child.target.rule && child.target.key === target.key && child.target.section === target.section && child.id !== entry.id) {
+                child.record = entry.record;
+            }
+        }
+        return true;
     }
 
     function updateContributors(contribDoc, actor, verifiedEntryIds, editCount) {
@@ -1173,6 +1295,7 @@
         previewWorkbenchDraft,
         compileRuleEntry,
         applyOperation,
+        applyMergedPatch,
         updateContributors,
         exportTokensCsv,
         parseTokensCsv,

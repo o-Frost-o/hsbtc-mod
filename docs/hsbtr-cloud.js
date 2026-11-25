@@ -26,6 +26,7 @@
     const STORAGE_AUTH = 'hsbtr.github_auth.v1';
     const STORAGE_OAUTH_TX = 'hsbtr.oauth_tx.v1';
     const STORAGE_PENDING = 'hsbtr.pending_submissions.v1';
+    const STORAGE_UPLOAD_QUEUE = 'hsbtr.upload_queue.v1';
     const STORAGE_CAPTURE = 'hsbtr.capture_queue.v1';
     const BASE_FILES = ['tokens', 'items', 'item_lore_en', 'lore_lines', 'menus', 'dialogues'];
 
@@ -34,6 +35,15 @@
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         return new TextDecoder('utf-8').decode(bytes);
+    };
+
+    const utf8ToBase64 = (str) => {
+        const bytes = new TextEncoder().encode(String(str));
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        }
+        return btoa(bin);
     };
 
     const base64UrlEncode = (bytes) => {
@@ -48,12 +58,17 @@
         sourceMode: 'loading', // 'github-api' | 'github-raw' | 'local'
         lastSyncedAt: null,
         lastOAuthResult: null,
+        cloudHeadSha: '',
+        cloudTreeSha: '',
         auth: { token: '', user: null, pushAccess: false, method: 'pat' },
         base: {},
         cloudOverrides: HsbtrEngine.createEmptyOverrides(),
         cloudReviewStatus: {},
         contributorsDoc: { version: 1, threshold: 25, updatedAt: '', contributors: {} },
         pendingSubmissions: [],
+        uploadQueue: [],
+        preQueueReviewEntries: new Map(),
+        uploadState: { flushing: false, lastError: '' },
         effectiveOverrides: HsbtrEngine.createEmptyOverrides(),
         effectiveReviewStatus: {},
         effectiveContributors: { version: 1, threshold: 25, updatedAt: '', contributors: {} },
@@ -62,11 +77,14 @@
     };
 
     let pollTimer = null;
+    let flushPromise = null;
+    let flushScheduled = false;
 
-    function emit(eventName = 'update') {
-        document.dispatchEvent(new CustomEvent('hsbtr:cloud-' + eventName, { detail: getSnapshot() }));
+    function emit(eventName = 'update', meta = null) {
+        const detail = meta ? { ...getSnapshot(), _meta: meta } : getSnapshot();
+        document.dispatchEvent(new CustomEvent('hsbtr:cloud-' + eventName, { detail }));
         for (const fn of listeners) {
-            try { fn(eventName, getSnapshot()); } catch { /* ignore listener errors */ }
+            try { fn(eventName, detail); } catch { /* ignore listener errors */ }
         }
     }
 
@@ -107,6 +125,69 @@
         return data;
     }
 
+    async function ghGraphql(query, variables = {}) {
+        const headers = new Headers();
+        headers.set('Accept', 'application/vnd.github+json');
+        headers.set('Content-Type', 'application/json');
+        headers.set('X-GitHub-Api-Version', '2022-11-28');
+        if (state.auth.token) headers.set('Authorization', `Bearer ${state.auth.token}`);
+        const resp = await fetch('https://api.github.com/graphql', {
+            method: 'POST',
+            cache: 'no-store',
+            headers,
+            body: JSON.stringify({ query, variables })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.errors?.length) {
+            const msg = data.errors?.map(e => e.message).join('; ') || data.message || `GitHub GraphQL HTTP ${resp.status}`;
+            const err = new Error(msg);
+            err.status = resp.status;
+            err.graphqlErrors = data.errors || null;
+            throw err;
+        }
+        return data.data;
+    }
+
+    async function fetchCloudBundleGraphql() {
+        const ref = `refs/heads/${CONFIG.branch}`;
+        const pfx = `${CONFIG.branch}:${CONFIG.dataPath}`;
+        const query = `
+            query ($owner: String!, $repo: String!, $ref: String!, $ovExp: String!, $rsExp: String!, $ctExp: String!) {
+                repository(owner: $owner, name: $repo) {
+                    ref(qualifiedName: $ref) {
+                        target {
+                            oid
+                            ... on Commit { tree { oid } }
+                        }
+                    }
+                    ov: object(expression: $ovExp) { ... on Blob { text } }
+                    rs: object(expression: $rsExp) { ... on Blob { text } }
+                    ct: object(expression: $ctExp) { ... on Blob { text } }
+                }
+            }
+        `;
+        const data = await ghGraphql(query, {
+            owner: CONFIG.owner,
+            repo: CONFIG.repo,
+            ref,
+            ovExp: `${pfx}/overrides.json`,
+            rsExp: `${pfx}/review_status.json`,
+            ctExp: `${pfx}/contributors.json`
+        });
+        const repoNode = data?.repository;
+        const target = repoNode?.ref?.target;
+        if (!target?.oid || typeof repoNode?.ov?.text !== 'string' || typeof repoNode?.rs?.text !== 'string' || typeof repoNode?.ct?.text !== 'string') {
+            throw new Error('Incomplete GraphQL repository bundle');
+        }
+        return {
+            headSha: target.oid,
+            treeSha: target.tree?.oid || '',
+            ov: JSON.parse(repoNode.ov.text),
+            rs: JSON.parse(repoNode.rs.text),
+            contrib: JSON.parse(repoNode.ct.text)
+        };
+    }
+
     async function fetchCloudJson(filename, unauthRef = CONFIG.branch) {
         const rel = `./data/${filename}?t=${Date.now()}`;
         const rawRef = encodeURIComponent(unauthRef || CONFIG.branch);
@@ -139,10 +220,32 @@
         return { data: await localResp.json(), mode: 'local' };
     }
 
+    function snapshotPreQueueEntry(entry) {
+        if (!entry) return null;
+        return {
+            id: entry.id,
+            dictionary: entry.dictionary,
+            kind: entry.kind,
+            target: { ...entry.target },
+            source: entry.source,
+            context: entry.context,
+            value: entry.value,
+            format: entry.format,
+            record: entry.record ? JSON.parse(JSON.stringify(entry.record)) : entry.record,
+            dynamic: entry.dynamic ? JSON.parse(JSON.stringify(entry.dynamic)) : null,
+            _rev: entry._rev || null,
+            markable: entry.markable
+        };
+    }
+
     function recomputeEffectiveState() {
         let ov = state.cloudOverrides || HsbtrEngine.createEmptyOverrides();
         let rs = state.cloudReviewStatus || {};
         let contribs = state.contributorsDoc || { version: 1, threshold: 25, updatedAt: '', contributors: {} };
+
+        let merged = HsbtrEngine.mergeDictionaries(state.base, ov);
+        let reviewIndex = HsbtrEngine.createReviewIndex(merged);
+        state.preQueueReviewEntries = new Map();
 
         const validPending = [];
         for (const sub of state.pendingSubmissions) {
@@ -150,9 +253,10 @@
                 let verifiedIds = [];
                 let editCount = 0;
                 for (const op of (sub.ops || [])) {
-                    const res = HsbtrEngine.applyOperation(ov, rs, op, state.base);
+                    const res = HsbtrEngine.applyOperation(ov, rs, op, state.base, { merged, reviewIndex });
                     ov = res.overrides;
                     rs = res.reviewStatus;
+                    HsbtrEngine.applyMergedPatch(merged, reviewIndex, res);
                     verifiedIds.push(...res.verifiedEntryIds);
                     editCount += res.editCount;
                 }
@@ -167,11 +271,35 @@
         state.pendingSubmissions = validPending;
         writeStorage(STORAGE_PENDING, validPending);
 
+        const validQueue = [];
+        for (const qItem of state.uploadQueue) {
+            try {
+                const rid = qItem.op?.type === 'review' ? qItem.op.review?.id : '';
+                if (rid && !state.preQueueReviewEntries.has(rid)) {
+                    const existingEntry = reviewIndex.lookup(rid);
+                    if (existingEntry) state.preQueueReviewEntries.set(rid, snapshotPreQueueEntry(existingEntry));
+                }
+                const res = HsbtrEngine.applyOperation(ov, rs, qItem.op, state.base, { merged, reviewIndex });
+                ov = res.overrides;
+                rs = res.reviewStatus;
+                HsbtrEngine.applyMergedPatch(merged, reviewIndex, res);
+                const actorLogin = qItem.actorLogin || state.auth.user?.login;
+                if (actorLogin) {
+                    contribs = HsbtrEngine.updateContributors(contribs, { login: actorLogin }, res.verifiedEntryIds, res.editCount);
+                }
+                validQueue.push(qItem);
+            } catch {
+                // Drop queued op invalidated remotely
+            }
+        }
+        state.uploadQueue = validQueue;
+        writeStorage(STORAGE_UPLOAD_QUEUE, validQueue);
+
         state.effectiveOverrides = ov;
         state.effectiveReviewStatus = rs;
         state.effectiveContributors = contribs;
-        state.merged = HsbtrEngine.mergeDictionaries(state.base, ov);
-        state.reviewIndex = HsbtrEngine.createReviewIndex(state.merged);
+        state.merged = merged;
+        state.reviewIndex = reviewIndex;
     }
 
     function extractIssueSubmission(issue) {
@@ -450,6 +578,7 @@
             state.auth.method = savedAuth.method || 'pat';
         }
         state.pendingSubmissions = readStorage(STORAGE_PENDING, []);
+        state.uploadQueue = readStorage(STORAGE_UPLOAD_QUEUE, []);
 
         const cbRes = await handleOAuthCallback();
 
@@ -470,18 +599,52 @@
         await syncDynamic();
         state.ready = true;
         emit('ready');
+        if (state.uploadQueue.length > 0 && state.auth.token && state.auth.user?.login) {
+            scheduleUploadFlush();
+        }
     }
 
-    async function syncDynamic({ silent = false } = {}) {
+    async function syncDynamic({ silent = false, skipIssues = false, waitQueue = false } = {}) {
+        if (waitQueue && (flushPromise || state.uploadQueue.length > 0)) {
+            await flushUploadQueue();
+        }
+        if (state.auth.token) {
+            try {
+                const bundle = await fetchCloudBundleGraphql();
+                state.cloudHeadSha = bundle.headSha;
+                state.cloudTreeSha = bundle.treeSha;
+                state.cloudOverrides = bundle.ov;
+                state.cloudReviewStatus = bundle.rs;
+                state.contributorsDoc = bundle.contrib;
+                state.sourceMode = 'github-api';
+                state.lastSyncedAt = new Date().toISOString();
+                if (!skipIssues && (!state.auth.pushAccess || state.pendingSubmissions.length > 0)) {
+                    await reconcileOpenIssues();
+                }
+                recomputeEffectiveState();
+                schedulePendingPoll();
+                if (!silent) emit('update');
+                return;
+            } catch {
+                // Fall back to REST / raw / local snapshot
+            }
+        }
+
         let unauthRef = CONFIG.branch;
         if (!state.auth.token) {
             try {
                 const ref = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/ref/heads/${encodeURIComponent(CONFIG.branch)}`);
                 if (ref?.object?.sha && /^[0-9a-f]{40}$/i.test(ref.object.sha)) {
                     unauthRef = ref.object.sha;
+                    state.cloudHeadSha = ref.object.sha;
+                    state.cloudTreeSha = '';
                 }
             } catch { /* fallback to branch ref */ }
+        } else {
+            state.cloudHeadSha = '';
+            state.cloudTreeSha = '';
         }
+
         const [ovRes, rsRes, cRes] = await Promise.all([
             fetchCloudJson('overrides.json', unauthRef),
             fetchCloudJson('review_status.json', unauthRef),
@@ -493,7 +656,7 @@
         state.sourceMode = ovRes.mode;
         state.lastSyncedAt = new Date().toISOString();
 
-        if (ovRes.mode !== 'local') {
+        if (!skipIssues && ovRes.mode !== 'local' && (!state.auth.pushAccess || state.pendingSubmissions.length > 0)) {
             await reconcileOpenIssues();
         }
         recomputeEffectiveState();
@@ -542,88 +705,191 @@
         throw new Error('請先完成 GitHub 帳號驗證後再儲存或驗證翻譯。');
     }
 
-    async function createBlob(contentObj) {
-        const res = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/blobs`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: JSON.stringify(contentObj, null, 2) + '\n', encoding: 'utf-8' })
-        });
-        return res.sha;
-    }
-
-    async function directCommitOps(ops, summary, actor) {
-        for (let attempt = 0; attempt < 3; attempt++) {
-            await syncDynamic({ silent: true });
-            let ov = state.cloudOverrides;
-            let rs = state.cloudReviewStatus;
-            const verifiedIds = [];
-            let editCount = 0;
-            for (const op of ops) {
-                const res = HsbtrEngine.applyOperation(ov, rs, op, state.base);
-                ov = res.overrides;
-                rs = res.reviewStatus;
-                verifiedIds.push(...res.verifiedEntryIds);
-                editCount += res.editCount;
-            }
-            const contrib = HsbtrEngine.updateContributors(state.contributorsDoc, actor, verifiedIds, editCount);
-
-            const ref = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/ref/heads/${encodeURIComponent(CONFIG.branch)}`);
-            const headSha = ref.object.sha;
-            const headCommit = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/commits/${headSha}`);
-
-            const treeItems = [];
-            const blobOverrides = await createBlob(ov);
-            treeItems.push({ path: `${CONFIG.dataPath}/overrides.json`, mode: '100644', type: 'blob', sha: blobOverrides });
-            if (verifiedIds.length > 0) {
-                const blobRs = await createBlob(rs);
-                treeItems.push({ path: `${CONFIG.dataPath}/review_status.json`, mode: '100644', type: 'blob', sha: blobRs });
-            }
-            const blobContrib = await createBlob(contrib);
-            treeItems.push({ path: `${CONFIG.dataPath}/contributors.json`, mode: '100644', type: 'blob', sha: blobContrib });
-
-            const newTree = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/trees`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeItems })
-            });
-            const newCommit = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/commits`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: `docs(data): ${summary} (@${actor.login})`,
-                    tree: newTree.sha,
-                    parents: [headSha]
-                })
-            });
-
-            try {
-                await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/refs/heads/${encodeURIComponent(CONFIG.branch)}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sha: newCommit.sha, force: false })
-                });
-                state.cloudOverrides = ov;
-                state.cloudReviewStatus = rs;
-                state.contributorsDoc = contrib;
-                state.lastSyncedAt = new Date().toISOString();
-                recomputeEffectiveState();
-                emit('update');
-                return { mode: 'direct', commitSha: newCommit.sha, verifiedCount: contrib.contributors[actor.login]?.verifiedCount || 0 };
-            } catch (err) {
-                if (err.status !== 422 || attempt === 2) throw err;
-            }
+    function makeBatchContext(existingOv, existingRs, existingBaseRes) {
+        if (!existingBaseRes && !state.pendingSubmissions.length && !state.preQueueReviewEntries.size && state.cloudOverrides === existingOv) {
+            return { merged: state.merged, reviewIndex: state.reviewIndex };
         }
+        return null;
     }
 
-    async function submitIssueOp(ops, summary, actor) {
-        // Validate against latest state before opening GitHub Issue
-        let ov = state.effectiveOverrides;
-        let rs = state.effectiveReviewStatus;
+    function applyBatchOps(startOv, startRs, ops, baseContext = null) {
+        let ov = startOv;
+        let rs = startRs;
+        const verifiedIds = [];
+        let editCount = 0;
+        const changedFiles = new Set();
+
+        const batchUpdated = new Map();
+        const batchIdx = baseContext?.reviewIndex ? {
+            lookup: (id) => batchUpdated.get(id) || state.preQueueReviewEntries.get(id) || baseContext.reviewIndex.lookup(id),
+            entryRevision: baseContext.reviewIndex.entryRevision,
+            excerpt: baseContext.reviewIndex.excerpt
+        } : null;
+        const batchCtx = (baseContext?.merged && batchIdx) ? { merged: baseContext.merged, reviewIndex: batchIdx } : null;
+
         for (const op of ops) {
-            const res = HsbtrEngine.applyOperation(ov, rs, op, state.base);
+            const res = HsbtrEngine.applyOperation(ov, rs, op, state.base, batchCtx);
             ov = res.overrides;
             rs = res.reviewStatus;
+            for (const f of res.changedFiles) changedFiles.add(f);
+            verifiedIds.push(...res.verifiedEntryIds);
+            editCount += res.editCount;
+            if (res.reviewPatch?.entry) {
+                batchUpdated.set(res.reviewPatch.entry.id, res.reviewPatch.entry);
+            }
         }
+        return { ov, rs, verifiedIds, editCount, changedFiles, patchMap: batchUpdated };
+    }
+
+    function buildFilesToCommit(ov, rs, contrib, changedFiles) {
+        const files = [];
+        if (changedFiles.has('overrides.json')) {
+            files.push({ name: 'overrides.json', text: JSON.stringify(ov, null, 2) + '\n' });
+        }
+        if (changedFiles.has('review_status.json')) {
+            files.push({ name: 'review_status.json', text: JSON.stringify(rs, null, 2) + '\n' });
+        }
+        files.push({ name: 'contributors.json', text: JSON.stringify(contrib, null, 2) + '\n' });
+        return files;
+    }
+
+    async function commitFilesGraphql(headSha, headline, files) {
+        const mutation = `
+            mutation ($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                    commit { oid }
+                }
+            }
+        `;
+        const data = await ghGraphql(mutation, {
+            input: {
+                branch: {
+                    repositoryNameWithOwner: `${CONFIG.owner}/${CONFIG.repo}`,
+                    branchName: CONFIG.branch
+                },
+                expectedHeadOid: headSha,
+                message: { headline },
+                fileChanges: {
+                    additions: files.map(f => ({
+                        path: `${CONFIG.dataPath}/${f.name}`,
+                        contents: utf8ToBase64(f.text)
+                    }))
+                }
+            }
+        });
+        const oid = data?.createCommitOnBranch?.commit?.oid;
+        if (!oid) throw new Error('GraphQL createCommitOnBranch missing commit oid');
+        return { commitSha: oid, treeSha: '', via: 'graphql' };
+    }
+
+    async function commitFilesRest(headSha, cachedTreeSha, commitMsg, files) {
+        let baseTreeSha = cachedTreeSha;
+        if (!baseTreeSha) {
+            const headCommit = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/commits/${headSha}`);
+            baseTreeSha = headCommit?.commit?.tree?.sha || headCommit?.tree?.sha;
+        }
+        if (!baseTreeSha) {
+            const gitCommit = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/commits/${headSha}`);
+            baseTreeSha = gitCommit.tree.sha;
+        }
+        const treeItems = files.map(f => ({
+            path: `${CONFIG.dataPath}/${f.name}`,
+            mode: '100644',
+            type: 'blob',
+            content: f.text
+        }));
+        const newTree = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/trees`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems })
+        });
+        const newCommit = await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/commits`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: commitMsg, tree: newTree.sha, parents: [headSha] })
+        });
+        await ghFetch(`/repos/${CONFIG.owner}/${CONFIG.repo}/git/refs/heads/${encodeURIComponent(CONFIG.branch)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sha: newCommit.sha, force: false })
+        });
+        return { commitSha: newCommit.sha, treeSha: newTree.sha, via: 'rest' };
+    }
+
+    function isHeadConflictError(err) {
+        if (!err) return false;
+        if (err.status === 422) return true;
+        return /expected.*(oid|branch|head|point)|head.*(mismatch|conflict|changed)|not fast-forward|already exists|was at|cannot be cleanly/i.test(String(err.message || ''));
+    }
+
+    async function directCommitOps(ops, summary, actor, { skipUiUpdate = false } = {}) {
+        const safeHeadline = String(summary || '更新繁中翻譯資料庫').replace(/[\r\n]/g, ' ').slice(0, 120);
+        const commitMsg = `docs(data): ${safeHeadline} (@${actor.login})`;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if (!state.cloudHeadSha || attempt > 0) {
+                await syncDynamic({ silent: true, skipIssues: true });
+            }
+            const useCtx = (attempt === 0) ? makeBatchContext(state.cloudOverrides, state.cloudReviewStatus, null)
+                || (state.preQueueReviewEntries.size ? { merged: state.merged, reviewIndex: state.reviewIndex } : null)
+                : null;
+            const { ov, rs, verifiedIds, editCount, changedFiles, patchMap } = applyBatchOps(
+                state.cloudOverrides,
+                state.cloudReviewStatus,
+                ops,
+                useCtx
+            );
+            const contrib = HsbtrEngine.updateContributors(state.contributorsDoc, actor, verifiedIds, editCount);
+            const files = buildFilesToCommit(ov, rs, contrib, changedFiles);
+
+            let commitResult;
+            try {
+                commitResult = await commitFilesGraphql(state.cloudHeadSha, commitMsg, files);
+            } catch (gqlErr) {
+                if (isHeadConflictError(gqlErr)) {
+                    state.cloudHeadSha = '';
+                    state.cloudTreeSha = '';
+                    if (attempt === 2) throw gqlErr;
+                    continue;
+                }
+                try {
+                    commitResult = await commitFilesRest(state.cloudHeadSha, state.cloudTreeSha, commitMsg, files);
+                } catch (restErr) {
+                    if (isHeadConflictError(restErr) && attempt < 2) {
+                        state.cloudHeadSha = '';
+                        state.cloudTreeSha = '';
+                        continue;
+                    }
+                    throw restErr;
+                }
+            }
+
+            state.cloudHeadSha = commitResult.commitSha;
+            state.cloudTreeSha = commitResult.treeSha || '';
+            state.cloudOverrides = ov;
+            state.cloudReviewStatus = rs;
+            state.contributorsDoc = contrib;
+            state.lastSyncedAt = new Date().toISOString();
+
+            if (!skipUiUpdate) {
+                recomputeEffectiveState();
+                emit('update');
+            }
+            return {
+                mode: 'direct',
+                commitSha: commitResult.commitSha,
+                via: commitResult.via,
+                patchMap,
+                verifiedCount: contrib.contributors[actor.login]?.verifiedCount || 0
+            };
+        }
+    }
+
+    async function submitIssueOp(ops, summary, actor, { skipUiUpdate = false } = {}) {
+        const useCtx = !state.pendingSubmissions.length && !state.preQueueReviewEntries.size
+            ? { merged: state.merged, reviewIndex: state.reviewIndex }
+            : null;
+        applyBatchOps(state.effectiveOverrides, state.effectiveReviewStatus, ops, useCtx);
 
         const safeSummary = String(summary || '更新繁中翻譯資料庫').replace(/[\r\n]/g, ' ').slice(0, 120);
         const payload = { v: 1, ops, summary: safeSummary };
@@ -652,14 +918,129 @@
             summary: safeSummary,
             ops
         });
-        recomputeEffectiveState();
-        schedulePendingPoll();
-        emit('update');
+        if (!skipUiUpdate) {
+            recomputeEffectiveState();
+            schedulePendingPoll();
+            emit('update');
+        }
         return { mode: 'issueops', issueNumber: created.number, htmlUrl: created.html_url };
+    }
+
+    async function flushUploadQueue() {
+        if (flushPromise) return await flushPromise;
+        if (!state.uploadQueue.length) return;
+        flushPromise = (async () => {
+            state.uploadState.flushing = true;
+            state.uploadState.lastError = '';
+            emit('upload-status');
+            let uploadedAny = false;
+            let lastMode = 'direct';
+            try {
+                while (state.uploadQueue.length > 0) {
+                    if (!state.auth.token || !state.auth.user?.login) break;
+                    const auth = state.auth;
+                    const actor = {
+                        login: auth.user.login,
+                        avatarUrl: auth.user.avatar_url || '',
+                        htmlUrl: auth.user.html_url || `https://github.com/${auth.user.login}`
+                    };
+                    const maxBatch = auth.pushAccess ? 25 : 20;
+                    const batch = state.uploadQueue
+                        .filter(q => !q.actorLogin || q.actorLogin === auth.user.login)
+                        .slice(0, maxBatch);
+                    if (!batch.length) break;
+
+                    const batchOps = batch.map(b => b.op);
+                    const batchSummary = batch.length === 1
+                        ? batch[0].summary
+                        : `驗證並儲存 ${batch.length} 筆審核條目`;
+
+                    let commitPatchMap = null;
+                    try {
+                        if (auth.pushAccess) {
+                            const res = await directCommitOps(batchOps, batchSummary, actor, { skipUiUpdate: true });
+                            lastMode = res.mode;
+                            commitPatchMap = res.patchMap || null;
+                        } else {
+                            const res = await submitIssueOp(batchOps, batchSummary, actor, { skipUiUpdate: true });
+                            lastMode = res.mode;
+                            schedulePendingPoll();
+                        }
+                        const committedSet = new Set(batch.map(b => b.qid));
+                        state.uploadQueue = state.uploadQueue.filter(q => !committedSet.has(q.qid));
+                        writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
+                        for (const b of batch) {
+                            const rid = b.op?.type === 'review' ? b.op.review?.id : '';
+                            if (!rid) continue;
+                            if (state.uploadQueue.some(q => q.op?.type === 'review' && q.op.review?.id === rid)) {
+                                if (commitPatchMap?.has(rid)) {
+                                    state.preQueueReviewEntries.set(rid, snapshotPreQueueEntry(commitPatchMap.get(rid)));
+                                }
+                            } else {
+                                state.preQueueReviewEntries.delete(rid);
+                            }
+                        }
+                        uploadedAny = true;
+                        emit('upload-status');
+                    } catch (err) {
+                        const msg = err?.message || '雲端上傳失敗';
+                        const isConflict = /已被其他貢獻者更新|找不到審核條目|無法定位/.test(msg);
+                        if (isConflict) {
+                            await syncDynamic({ silent: true, skipIssues: true });
+                            const dropSet = new Set();
+                            for (const b of batch) {
+                                try {
+                                    HsbtrEngine.applyOperation(state.effectiveOverrides, state.effectiveReviewStatus, b.op, state.base, { merged: state.merged, reviewIndex: state.reviewIndex });
+                                } catch {
+                                    dropSet.add(b.qid);
+                                }
+                            }
+                            if (!dropSet.size) batch.forEach(b => dropSet.add(b.qid));
+                            state.uploadQueue = state.uploadQueue.filter(q => !dropSet.has(q.qid));
+                            writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
+                            recomputeEffectiveState();
+                            state.uploadState.lastError = msg;
+                            emit('upload-error', { error: msg });
+                            emit('update');
+                            continue;
+                        }
+                        state.uploadState.lastError = msg;
+                        emit('upload-error', { error: msg });
+                        break;
+                    }
+                }
+            } finally {
+                state.uploadState.flushing = false;
+                flushScheduled = false;
+                flushPromise = null;
+                if (uploadedAny) {
+                    if (!state.uploadQueue.length && !state.pendingSubmissions.length) {
+                        state.effectiveOverrides = state.cloudOverrides;
+                        state.effectiveReviewStatus = state.cloudReviewStatus;
+                        state.effectiveContributors = state.contributorsDoc;
+                    }
+                    emit('update', { fromUploadFlush: true, mode: lastMode });
+                }
+                emit('upload-status');
+            }
+        })();
+        return await flushPromise;
+    }
+
+    function scheduleUploadFlush() {
+        if (flushPromise || flushScheduled || !state.uploadQueue.length) return;
+        flushScheduled = true;
+        setTimeout(() => {
+            flushScheduled = false;
+            flushUploadQueue().catch(() => { /* handled via upload-error event */ });
+        }, 0);
     }
 
     async function commitOps(ops, summary) {
         const auth = requireAuth();
+        if (flushPromise || state.uploadQueue.length > 0) {
+            await flushUploadQueue();
+        }
         const actor = {
             login: auth.user.login,
             avatarUrl: auth.user.avatar_url || '',
@@ -669,6 +1050,10 @@
             return await directCommitOps(ops, summary, actor);
         }
         return await submitIssueOp(ops, summary, actor);
+    }
+
+    function hasPendingUploads() {
+        return state.uploadQueue.length > 0 || state.uploadState.flushing;
     }
 
     function getSnapshot() {
@@ -690,7 +1075,10 @@
             overrides: state.effectiveOverrides,
             contributorsDoc: state.effectiveContributors,
             pendingCount: state.pendingSubmissions.length,
-            pendingSubmissions: state.pendingSubmissions
+            pendingSubmissions: state.pendingSubmissions,
+            uploadQueueCount: state.uploadQueue.length,
+            uploading: state.uploadState.flushing,
+            uploadError: state.uploadState.lastError
         };
     }
 
@@ -722,6 +1110,8 @@
         logout,
         requireAuth,
         commitOps,
+        hasPendingUploads,
+        flushUploadQueue,
         getSnapshot,
         countOverrides,
         readStorage,
@@ -776,12 +1166,54 @@
         reviewNext: (req) => state.reviewIndex.next(req, state.effectiveReviewStatus),
         reviewExcerpt: (req) => state.reviewIndex.excerpt({ ...req, sentence: true }, state.effectiveReviewStatus),
         reviewSave: async (req, verify) => {
+            const auth = requireAuth();
+            const actor = {
+                login: auth.user.login,
+                avatarUrl: auth.user.avatar_url || '',
+                htmlUrl: auth.user.html_url || `https://github.com/${auth.user.login}`
+            };
             const existing = state.reviewIndex.lookup(req.id);
             const label = existing ? (existing.context || existing.target?.key || existing.kind) : req.id.slice(0, 8);
-            await commitOps(
-                [{ type: 'review', review: { id: req.id, revision: req.revision, value: req.value, roles: req.roles, excerpt: req.excerpt, verify } }],
-                `${verify ? '驗證並儲存' : '儲存'}審核條目 ${String(label).slice(0, 48)}`
+            const op = {
+                type: 'review',
+                review: { id: req.id, revision: req.revision, value: req.value, roles: req.roles, excerpt: req.excerpt, verify }
+            };
+            const preEntry = existing && !state.preQueueReviewEntries.has(req.id)
+                ? snapshotPreQueueEntry(existing)
+                : null;
+            const res = HsbtrEngine.applyOperation(
+                state.effectiveOverrides,
+                state.effectiveReviewStatus,
+                op,
+                state.base,
+                { merged: state.merged, reviewIndex: state.reviewIndex }
             );
+            if (!HsbtrEngine.applyMergedPatch(state.merged, state.reviewIndex, res)) {
+                state.merged = HsbtrEngine.mergeDictionaries(state.base, res.overrides);
+                state.reviewIndex = HsbtrEngine.createReviewIndex(state.merged);
+            }
+            if (preEntry && res.reviewPatch?.changedValue) {
+                state.preQueueReviewEntries.set(req.id, preEntry);
+            }
+            state.effectiveOverrides = res.overrides;
+            state.effectiveReviewStatus = res.reviewStatus;
+            state.effectiveContributors = HsbtrEngine.updateContributors(state.effectiveContributors, actor, res.verifiedEntryIds, res.editCount);
+
+            const summary = `${verify ? '驗證並儲存' : '儲存'}審核條目 ${String(label).slice(0, 48)}`;
+            state.uploadQueue.push({
+                qid: randomUrlToken(8),
+                op,
+                summary,
+                actorLogin: actor.login,
+                enqueuedAt: Date.now()
+            });
+            writeStorage(STORAGE_UPLOAD_QUEUE, state.uploadQueue);
+            state.uploadState.lastError = '';
+
+            scheduleUploadFlush();
+            emit('upload-status');
+            emit('update', { reason: 'review-enqueue' });
+
             const updated = state.reviewIndex.lookup(req.id);
             if (!updated) throw new Error('儲存成功，但找不到更新後條目，請重新同步。');
             return state.reviewIndex.toJson(updated, state.effectiveReviewStatus);

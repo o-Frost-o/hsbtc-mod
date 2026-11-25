@@ -499,12 +499,14 @@
     // Cloud Update Handler & Event Wiring
     // =========================================================================
 
-    const handleCloudStateChange = () => {
+    const handleCloudStateChange = (event) => {
         const snap = HsbtrCloud.getSnapshot();
-        State.tokens = snap.merged?.tokens || {};
-        document.dispatchEvent(new CustomEvent('hsbtr:workbench-tokens', { detail: State.tokens }));
         refreshHeaderAndStatus();
-        renderTokens();
+        if (event?.detail?._meta?.reason !== 'review-enqueue') {
+            State.tokens = snap.merged?.tokens || {};
+            document.dispatchEvent(new CustomEvent('hsbtr:workbench-tokens', { detail: State.tokens }));
+        }
+        if (document.getElementById('tab-tokens').classList.contains('active')) renderTokens();
         if (document.getElementById('tab-items').classList.contains('active')) fetchAndRenderItems();
         if (document.getElementById('tab-contributors').classList.contains('active')) renderContributors();
     };
@@ -534,6 +536,10 @@
         }
     });
     document.addEventListener('hsbtr:cloud-merged', () => showToast('GitHub Actions 已完成雲端合併，已載入最新共享資料！', 'success'));
+    document.addEventListener('hsbtr:cloud-upload-error', (e) => {
+        const msg = e.detail?._meta?.error || e.detail?.uploadError || '上傳失敗，將保留暫存佇列稍後重試。';
+        showToast(`雲端上傳失敗: ${msg}`, 'error');
+    });
     document.addEventListener('hsbtr:require-auth', () => {
         showToast('請先驗證 GitHub 帳號再進行編輯或驗證操作', 'warning');
         openAuthModal();
@@ -605,7 +611,7 @@
         // Cloud Sync Buttons
         const syncAction = async () => {
             try {
-                await HsbtrCloud.syncDynamic();
+                await HsbtrCloud.syncDynamic({ waitQueue: true });
                 showToast('已從 GitHub 同步最新共享翻譯資料庫', 'success');
             } catch (e) {
                 showToast(`雲端同步失敗: ${e.message}`, 'error');
