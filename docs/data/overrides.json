@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-25T07:25:32.184Z",
+  "updatedAt": "2026-11-27T02:33:43.646Z",
   "tokens": {},
   "items": {
     "ACACIA_GENERATOR_11": {
@@ -211,6 +211,33 @@
       "rarity": "SPECIAL",
       "lore_template": [
         "test"
+      ]
+    },
+    "ADAPTIVE_BELT": {
+      "id": "ADAPTIVE_BELT",
+      "name_en": "Adaptive Belt",
+      "name_zh_tw": "適應性腰帶",
+      "category": "BELT",
+      "rarity": "EPIC",
+      "lore_template": [
+        "§7生命值：§c+10",
+        "§7防禦力：§a+5",
+        "§7力量：§c+5",
+        "",
+        "§7會依你選擇的地下城職業，",
+        "§7額外提供對應加成！",
+        "",
+        "§b狂戰士（Berserk）§7：+§c10 力量",
+        "§b治療師（Healer）§7：+§c10 生命值§7、+§a5 治療效果",
+        "§b法師（Mage）§7：+§b25 智慧",
+        "§b坦克（Tank）§7：+§c5 生命值§7、+§a10 防禦力",
+        "§b弓箭手（Archer）§7：+§92 暴擊機率§7、+§95 暴擊傷害",
+        "",
+        "§e右鍵穿戴！",
+        "",
+        "§8此物品可以重鑄！",
+        "§4❣ §c需要完成地下墓穴（The Catacombs）第 II 層。",
+        "§5§l史詩地下城腰帶"
       ]
     }
   },
