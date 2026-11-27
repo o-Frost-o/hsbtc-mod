@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-27T02:33:43.646Z",
+  "updatedAt": "2026-11-27T02:41:47.088Z",
   "tokens": {},
   "items": {
     "ACACIA_GENERATOR_11": {
@@ -238,6 +238,22 @@
         "§8此物品可以重鑄！",
         "§4❣ §c需要完成地下墓穴（The Catacombs）第 II 層。",
         "§5§l史詩地下城腰帶"
+      ]
+    },
+    "AGARICUS_CAP_CAP": {
+      "id": "AGARICUS_CAP_CAP",
+      "name_en": "Agaricus Cap Cap",
+      "name_zh_tw": "雙齒傘菌帽帽",
+      "category": "HELMET",
+      "rarity": "RARE",
+      "lore_template": [
+        "§7裂隙時間：§a+50 秒",
+        "§7智力：§b+15",
+        "",
+        "§6技能：頭盔疊頭盔",
+        "§7擊殺怪物時，回復 §a+2 裂隙時間§7。",
+        "",
+        "§9§l稀有 頭盔"
       ]
     }
   },
