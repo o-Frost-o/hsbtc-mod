@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hypixel SkyBlock 繁體中文編輯器 (HSBTR)</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='0' fill='%2311221b'/><text y='70' x='15' font-size='65' fill='%23ffaa00'>譯</text></svg>">
-    <link rel="stylesheet" href="style.css?v=20261125-6">
-    <link rel="stylesheet" href="workbench.css?v=20261125-6">
-    <link rel="stylesheet" href="review.css?v=20261125-6">
+    <link rel="stylesheet" href="style.css?v=20261127-1">
+    <link rel="stylesheet" href="workbench.css?v=20261127-1">
+    <link rel="stylesheet" href="review.css?v=20261127-1">
 </head>
 <body>
     <!-- Header -->
@@ -23,7 +23,7 @@
         </div>
         <div class="header-right">
             <button id="btn-sync-cloud" class="btn btn-secondary btn-sm" title="從 GitHub 重新載入最新共享翻譯資料">
-                <span class="btn-icon">🔄</span> 重新載入
+                重新載入
             </button>
             <button id="btn-github-auth" class="btn btn-github-official btn-sm" title="透過 GitHub 官方帳號登入以進行編輯與審核驗證">
                 <svg class="github-mark-svg" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -353,7 +353,7 @@
                     </div>
                     <div class="form-actions">
                         <button id="btn-execute-preview" class="btn btn-primary btn-block">
-                            <span class="btn-icon">👁️</span> 執行即時翻譯與組合預覽
+                            執行即時翻譯與組合預覽
                         </button>
                     </div>
                 </div>
@@ -448,7 +448,7 @@
                                 透過 GitHub 帳號驗證並完成至少 <strong id="contrib-threshold-val" style="color: var(--mc-gold);">25</strong> 條唯一翻譯審核驗證的編輯者，將永久收錄於下方官方貢獻者名單。
                             </p>
                         </div>
-                        <button id="btn-contrib-refresh" class="btn btn-secondary btn-sm" type="button">🔄 更新貢獻統計</button>
+                        <button id="btn-contrib-refresh" class="btn btn-secondary btn-sm" type="button">更新貢獻統計</button>
                     </div>
                     <div class="contrib-hero-stats">
                         <div class="contrib-metric">
@@ -498,7 +498,7 @@
                     </div>
                     <div class="card-footer">
                         <button id="btn-export-csv" class="btn btn-primary" type="button">
-                            <span class="btn-icon">💾</span> 下載 tokens.csv
+                            下載 tokens.csv
                         </button>
                     </div>
                 </div>
@@ -522,7 +522,7 @@
                     </div>
                     <div class="card-footer">
                         <button id="btn-confirm-import" class="btn btn-success" disabled>
-                            <span class="btn-icon">✔</span> 確認匯入並儲存至雲端
+                            確認匯入並儲存至雲端
                         </button>
                     </div>
                 </div>
@@ -548,9 +548,9 @@
                         <code class="sync-cmd-box">node scripts/sync_cloud_db.mjs</code>
                     </div>
                     <div class="card-footer" style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <button id="btn-sync-cloud-card" class="btn btn-primary" type="button">🔄 立即同步雲端</button>
-                        <button id="btn-download-overrides" class="btn btn-secondary btn-sm" type="button">⬇ overrides.json</button>
-                        <button id="btn-download-review-status" class="btn btn-secondary btn-sm" type="button">⬇ review_status.json</button>
+                        <button id="btn-sync-cloud-card" class="btn btn-primary" type="button">立即同步雲端</button>
+                        <button id="btn-download-overrides" class="btn btn-secondary btn-sm" type="button">下載 overrides.json</button>
+                        <button id="btn-download-review-status" class="btn btn-secondary btn-sm" type="button">下載 review_status.json</button>
                     </div>
                 </div>
             </div>
@@ -820,9 +820,9 @@
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="hsbtr-engine.js?v=20261125-6"></script>
-    <script src="hsbtr-cloud.js?v=20261125-6"></script>
-    <script src="app.js?v=20261125-6"></script>
-    <script src="review.js?v=20261125-6"></script>
+    <script src="hsbtr-engine.js?v=20261127-1"></script>
+    <script src="hsbtr-cloud.js?v=20261127-1"></script>
+    <script src="app.js?v=20261127-1"></script>
+    <script src="review.js?v=20261127-1"></script>
 </body>
 </html>
