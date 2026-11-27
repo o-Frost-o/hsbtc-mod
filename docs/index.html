@@ -42,26 +42,26 @@
     <nav class="app-nav">
         <button class="nav-tab active" data-tab="review">翻譯審核</button>
         <button class="nav-tab" data-tab="tokens">
-            <span class="tab-icon">🔤</span> 詞彙對照表
+            詞彙對照表
             <span id="badge-token-count" class="tab-counter">0</span>
         </button>
         <button class="nav-tab" data-tab="items">
-            <span class="tab-icon">🗡️</span> 道具翻譯庫
+            道具翻譯庫
             <span id="badge-item-count" class="tab-counter">0</span>
         </button>
         <button class="nav-tab" data-tab="preview">
-            <span class="tab-icon">👁️</span> 即時翻譯預覽
+            即時翻譯預覽
         </button>
         <button class="nav-tab" data-tab="capture">
-            <span class="tab-icon">📥</span> 未翻譯擷取匯入
+            未翻譯擷取匯入
             <span id="badge-capture-count" class="tab-counter">0</span>
         </button>
         <button class="nav-tab" data-tab="contributors">
-            <span class="tab-icon">🏆</span> 貢獻者名單
+            貢獻者名單
             <span id="badge-contrib-count" class="tab-counter">0</span>
         </button>
         <button class="nav-tab" data-tab="csv">
-            <span class="tab-icon">⚙️</span> CSV 與雲端同步
+            CSV 與雲端同步
         </button>
     </nav>
 
@@ -399,7 +399,7 @@
         <section id="tab-capture" class="tab-panel">
             <div class="capture-import-banner" id="capture-drop-zone">
                 <div>
-                    <strong>📂 匯入遊戲內未翻譯擷取紀錄 (untranslated_capture.json)</strong>
+                    <strong>匯入遊戲內未翻譯擷取紀錄 (untranslated_capture.json)</strong>
                     <p style="color: var(--text-secondary); font-size: 12px; margin-top: 2px;">可將遊戲設定資料夾內的 <code>untranslated_capture.json</code> 拖曳至此或點擊選擇檔案匯入（暫存於瀏覽器本機，重新載入不遺失）。</p>
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
@@ -443,7 +443,7 @@
                 <div class="contrib-hero-card">
                     <div class="contrib-hero-head">
                         <div>
-                            <h2>🏆 社群翻譯貢獻者名單</h2>
+                            <h2>社群翻譯貢獻者名單</h2>
                             <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
                                 透過 GitHub 帳號驗證並完成至少 <strong id="contrib-threshold-val" style="color: var(--mc-gold);">25</strong> 條唯一翻譯審核驗證的編輯者，將永久收錄於下方官方貢獻者名單。
                             </p>
@@ -473,7 +473,7 @@
                 </div>
 
                 <div class="contrib-card" id="contrib-pending-wrap">
-                    <h3>⏳ 待寫入雲端資料庫的提交佇列</h3>
+                    <h3>待寫入雲端資料庫的提交佇列</h3>
                     <p style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">已送出的編輯與驗證正由 GitHub Actions 自動寫入共享資料庫。</p>
                     <ul id="contrib-pending-list" class="pending-list"></ul>
                 </div>
@@ -486,7 +486,7 @@
                 <!-- Export Card -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>📥 匯出詞彙對照表 (CSV)</h2>
+                        <h2>匯出詞彙對照表 (CSV)</h2>
                     </div>
                     <div class="card-body">
                         <p class="card-desc">將目前雲端合併後的所有 Token 詞彙匯出為標準 RFC 4180 CSV 檔案，可使用 Excel、Google 試算表或文字編輯器檢視與編輯。</p>
@@ -506,7 +506,7 @@
                 <!-- Import Card -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>📤 匯入詞彙對照表 (CSV)</h2>
+                        <h2>匯入詞彙對照表 (CSV)</h2>
                     </div>
                     <div class="card-body">
                         <p class="card-desc">上傳編輯完成的 RFC 4180 CSV 檔案，完成 GitHub 帳號驗證後即可批次寫入共用雲端資料庫。</p>
@@ -530,7 +530,7 @@
                 <!-- Standalone Cloud DB Card -->
                 <div class="card hot-reload-card">
                     <div class="card-header">
-                        <h2>☁️ 雲端獨立資料庫與同步</h2>
+                        <h2>雲端獨立資料庫與同步</h2>
                     </div>
                     <div class="card-body">
                         <p class="card-desc">此網頁直接存取 <code>o-Frost-o/hsbtc-mod</code> 雲端共享資料庫（<code>docs/data/</code>），無需執行遊戲內熱重載，重新載入或重開頁面均會自動保存與同步。</p>
